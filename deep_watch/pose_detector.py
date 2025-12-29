@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from typing import Optional, Union, List, Tuple
-from pathlib import Path
 
 
 class PoseDetector:
@@ -207,7 +206,7 @@ class PoseDetector:
         confidences = result.keypoints.conf.cpu().numpy()
         
         people = []
-        for person_kpts, person_conf in zip(keypoints, confidences):
+        for person_idx, (person_kpts, person_conf) in enumerate(zip(keypoints, confidences)):
             person_data = {
                 'keypoints': {},
                 'bbox': None
@@ -222,8 +221,8 @@ class PoseDetector:
                 }
             
             # Add bounding box if available
-            if result.boxes is not None and len(result.boxes) > 0:
-                bbox = result.boxes.xyxy.cpu().numpy()[len(people)]
+            if result.boxes is not None and len(result.boxes) > person_idx:
+                bbox = result.boxes.xyxy.cpu().numpy()[person_idx]
                 person_data['bbox'] = {
                     'x1': float(bbox[0]),
                     'y1': float(bbox[1]),
