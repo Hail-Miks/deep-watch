@@ -118,7 +118,7 @@ def choose_person(people: List[Dict]) -> Dict:
 # ----- Model init -----
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-POSE = PoseDetector(model_path="yolov8n-pose.pt", conf_threshold=0.25, device=DEVICE)
+POSE = PoseDetector(model_path="model/yolov8n-pose.pt", conf_threshold=0.25, device=DEVICE)
 
 CKPT_PATH = os.environ.get("LSTM_CKPT", os.path.join("runs", "lstm", "best.pt"))
 if not os.path.isfile(CKPT_PATH):
@@ -197,13 +197,7 @@ def extract_sequence_from_video(video_path: str) -> Tuple[float, np.ndarray, np.
 
 @app.get("/health")
 def health():
-    ok = os.path.isfile(CKPT_PATH)
-    device = POSE.model.device.type if hasattr(POSE.model, "device") else str(DEVICE)
-    return jsonify({
-        "status": "ok" if ok else "missing_checkpoint",
-        "device": device,
-        "checkpoint": CKPT_PATH,
-    })
+    return jsonify({"status": "ok"})
 
 
 @app.post("/predict_video")
@@ -316,13 +310,15 @@ def generate_stream(video_source: int | str):
 
             if results:
                 result = results[0]
+                # Use Ultralytics' built-in renderer for multi-color overlay
+                try:
+                    vis = result.plot()
+                except Exception:
+                    vis = frame.copy()
                 people = POSE.get_keypoints(result)
                 person = choose_person(people)
 
                 if person:
-                    if hasattr(POSE, 'visualize_results'):
-                        vis = POSE.visualize_results(vis, result)
-
                     k = np.full((K, 2), np.nan, dtype=np.float32)
                     c = np.zeros((K,), dtype=np.float32)
                     bb = np.full((4,), np.nan, dtype=np.float32)

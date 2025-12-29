@@ -9,10 +9,7 @@
   <body>
     <header>
       <h1>Deep Watch</h1>
-      <div class="status">
-        <span id="device"></span>
-        <span id="ckpt"></span>
-      </div>
+      <div class="status" id="statusText">Checking…</div>
     </header>
 
     <main>
@@ -27,10 +24,7 @@
         <div class="panel-header">System</div>
         <div class="panel-body">
           <div class="kv">
-            <span>Checkpoint:</span> <span id="ckptPath">Loading…</span>
-          </div>
-          <div class="kv">
-            <span>Device:</span> <span id="deviceName">Loading…</span>
+            <span>Status:</span> <span id="simpleStatus">Loading…</span>
           </div>
           <div class="hint">Prediction is overlaid on the video stream.</div>
         </div>
@@ -43,15 +37,18 @@
 
     <script>
       async function refreshHealth() {
+        const statusEl = document.getElementById("simpleStatus");
+        const headerEl = document.getElementById("statusText");
         try {
           const res = await fetch("/health");
           const data = await res.json();
-          document.getElementById("ckptPath").textContent =
-            data.checkpoint || "Unknown";
-          document.getElementById("deviceName").textContent =
-            data.device || "Unknown";
+          const ok = data && data.status === "ok";
+          const text = ok ? "Service OK" : "Service Unavailable";
+          statusEl.textContent = text;
+          headerEl.textContent = text;
         } catch (e) {
-          console.log(e);
+          statusEl.textContent = "Service Unavailable";
+          headerEl.textContent = "Service Unavailable";
         }
       }
       refreshHealth();

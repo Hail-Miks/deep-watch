@@ -71,39 +71,6 @@ class PoseDetector:
             (11, 13), (13, 15), (12, 14), (14, 16)  # Legs
         ]
     
-    def detect(
-        self,
-        source: Union[str, np.ndarray],
-        save: bool = False,
-        save_dir: str = "runs/pose",
-        show: bool = False,
-        verbose: bool = True
-    ) -> List:
-        """
-        Perform pose detection on an image or video.
-        
-        Args:
-            source: Image path, video path, webcam index, or numpy array
-            save: Whether to save the output
-            save_dir: Directory to save results
-            show: Whether to display results
-            verbose: Whether to print verbose output
-            
-        Returns:
-            List of detection results
-        """
-        results = self.model.predict(
-            source=source,
-            conf=self.conf_threshold,
-            iou=self.iou_threshold,
-            save=save,
-            project=save_dir,
-            show=show,
-            verbose=verbose
-        )
-        
-        return results
-    
     def detect_image(
         self,
         image: Union[str, np.ndarray],
@@ -233,78 +200,6 @@ class PoseDetector:
             people.append(person_data)
         
         return people
-    
-    def process_video(
-        self,
-        video_source: Union[str, int],
-        output_path: Optional[str] = None,
-        display: bool = True,
-        max_frames: Optional[int] = None
-    ) -> None:
-        """
-        Process video with pose detection.
-        
-        Args:
-            video_source: Video file path or webcam index (0 for default webcam)
-            output_path: Path to save output video (optional)
-            display: Whether to display the video while processing
-            max_frames: Maximum number of frames to process (None for all)
-        """
-        # Open video capture
-        cap = cv2.VideoCapture(video_source)
-        
-        if not cap.isOpened():
-            raise ValueError(f"Failed to open video source: {video_source}")
-        
-        # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        print(f"Video: {width}x{height} @ {fps} FPS")
-        
-        # Setup video writer if output path is specified
-        writer = None
-        if output_path:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        
-        frame_count = 0
-        try:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Check max frames limit
-                if max_frames and frame_count >= max_frames:
-                    break
-                
-                # Perform pose detection
-                results, vis_frame = self.detect_image(frame, visualize=True)
-                
-                # Write frame if output path is specified
-                if writer and vis_frame is not None:
-                    writer.write(vis_frame)
-                
-                # Display frame
-                if display and vis_frame is not None:
-                    cv2.imshow('YOLOv8 Pose Detection', vis_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
-                
-                frame_count += 1
-                if frame_count % 30 == 0:
-                    print(f"Processed {frame_count} frames")
-        
-        finally:
-            cap.release()
-            if writer:
-                writer.release()
-            if display:
-                cv2.destroyAllWindows()
-            
-            print(f"Finished processing {frame_count} frames")
     
     def __repr__(self) -> str:
         return (
