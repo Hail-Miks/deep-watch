@@ -26,7 +26,7 @@ class PoseDetector:
     
     def __init__(
         self,
-        model_path: str = "yolov8n-pose.pt",
+        model_path: str = "model/yolov8n-pose.pt",
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         device: Optional[str] = None

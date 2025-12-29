@@ -1,0 +1,27 @@
+{
+  "clip": "clip_6",
+  "class": "not_drowning",
+  "source_path": "C:\\Users\\mikha\\Desktop\\Mik\\deep-watch\\dataset\\not_drowning\\clip_6",
+  "mode": "frames",
+  "fps": 30.0,
+  "num_frames": 214,
+  "keypoints": [
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle"
+  ]
+}

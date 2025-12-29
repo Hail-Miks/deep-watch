@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Watch - Surveillance</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Deep Watch</h1>
+      <div class="status">
+        <span id="device"></span>
+        <span id="ckpt"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel video">
+        <div class="panel-header">Live Feed</div>
+        <div class="panel-body video-container">
+          <img id="stream" src="/video_feed" alt="Live stream" />
+        </div>
+      </section>
+
+      <section class="panel info">
+        <div class="panel-header">System</div>
+        <div class="panel-body">
+          <div class="kv">
+            <span>Checkpoint:</span> <span id="ckptPath">Loading…</span>
+          </div>
+          <div class="kv">
+            <span>Device:</span> <span id="deviceName">Loading…</span>
+          </div>
+          <div class="hint">Prediction is overlaid on the video stream.</div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>© Deep Watch</div>
+    </footer>
+
+    <script>
+      async function refreshHealth() {
+        try {
+          const res = await fetch("/health");
+          const data = await res.json();
+          document.getElementById("ckptPath").textContent =
+            data.checkpoint || "Unknown";
+          document.getElementById("deviceName").textContent =
+            data.device || "Unknown";
+        } catch (e) {
+          console.log(e);
+        }
+      }
+      refreshHealth();
+      setInterval(refreshHealth, 5000);
+    </script>
+  </body>
+</html>
