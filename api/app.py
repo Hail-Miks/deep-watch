@@ -310,7 +310,6 @@ def generate_stream(video_source: int | str):
 
             if results:
                 result = results[0]
-                # Use Ultralytics' built-in renderer for multi-color overlay
                 try:
                     vis = result.plot()
                 except Exception:
