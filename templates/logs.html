@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Watch - Logs</title>
+    <link rel="stylesheet" href="/static/logs.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <a href="{{ url_for('index') }}" class="back-btn">←</a>
+        <h1>Deep Watch</h1>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel logs">
+        <div class="panel-header">Deepwatch Logs</div>
+        <div class="panel-body">
+          <!--<pre id="logsContent">Loading logs…</pre> -->
+          <div class="panel-body-header">
+            <input type="search" placeholder="Type to search report logs..." style="width: 300px; padding: 5px;">
+            <label for="start-date">From:</label>
+            <input type="date" id="start-date">
+            
+            <label for="end-date">To:</label>
+            <input type="date" id="end-date">
+          </div>
+          <div class="logs-container">
+            <table>
+            <thead>
+                <tr>
+                <th>Description</th>
+                <th>Date & Time</th>
+                <th>Playback</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                <td>Drowning Detected</td>
+                <td>2026-01-01 08:00 AM</td>
+                <td><button class="playback">Play</button></td>
+                </tr>
+                <tr>
+                <td>Drowning Detected</td>
+                <td>2026-01-01 09:15 AM</td>
+                <td><button class="playback">Play</button></td>
+                </tr>
+                <tr>
+                <td>Data exported</td>
+                <td>2026-01-01 10:30 AM</td>
+                <td><button class="playback">Play</button></td>
+                </tr>
+                <tr>
+                <td>Drowning Detected</td>
+                <td>2026-01-01 11:45 AM</td>
+                <td><button class="playback">Play</button></td>
+                </tr>
+                <tr>
+                <td>Drowning Detected</td>
+                <td>2026-01-01 01:00 PM</td>
+                <td><button class="playback">Play</button></td>
+                </tr>
+            </tbody>
+            </table>
+          </div>
+          
+
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div>© Deep Watch</div>
+    </footer>
+  </body>
+  </html>  

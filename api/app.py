@@ -260,6 +260,10 @@ def predict_video():
         "fps": float(fps),
     })
 
+@app.route('/logs')
+def logs():
+    # Display your logs.html
+    return render_template('logs.html')
 
 from collections import deque
 

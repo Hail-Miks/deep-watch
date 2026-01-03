@@ -21,7 +21,12 @@
       </section>
 
       <section class="panel info">
-        <div class="panel-header">System</div>
+        <div class="panel-header">
+          <span>System</span>
+          <a href="{{ url_for('logs') }}">
+            <button class="view-logs-btn">View Logs</button>
+          </a>
+        </div>
         <div class="panel-body">
           <div class="kv">
             <span>Status:</span> <span id="simpleStatus">Loading…</span>

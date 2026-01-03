@@ -1,0 +1,151 @@
+
+/* ===== General Styles ===== */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #fefeff;
+    color: #333;
+}
+
+h1, h2 {
+    margin: 0;
+}
+
+/* ===== Header ===== */
+header {
+    background-color: #1f2937;
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px; 
+}
+header h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 1px;
+  color: #c8e1ff;
+}
+.back-btn {
+    font-size: 20px;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.back-btn:hover {
+    color: #e3c3c3;
+}
+
+header .status {
+    font-size: 14px;
+    font-style: italic;
+}
+
+/* ===== Main Section ===== */
+main {
+    padding: 20px;
+}
+
+/* ===== Panel ===== */
+.panel {
+    background-color: #fff;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.panel-header {
+    background-color: #f4f4f4;
+    padding: 12px 15px;
+    font-weight: bold;
+    border-bottom: 1px solid #ddd;
+}
+
+.panel-body {
+    padding: 15px;
+}
+
+/* ===== Filters ===== */
+.panel-body-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+    align-items: center;
+}
+
+.panel-body-header input[type="search"],
+.panel-body-header input[type="date"] {
+    padding: 6px 10px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+/* ===== Logs Table ===== */
+.logs-container table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #fff;
+}
+
+.logs-container th, 
+.logs-container td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    color: white;
+}
+
+.logs-container th {
+    background-color: #0f141a;
+    font-weight: bold;
+}
+.logs-container td {
+    background-color: #44464a;
+}
+button.playback {
+    padding: 5px 12px;
+    font-size: 13px;
+    background-color: #dcdcdc;
+    color: black;
+    border: none;
+    border-radius: 15px;
+    cursor: pointer;
+}
+
+button.playback:hover {
+    background-color: #ffffff;
+}
+
+footer {
+  padding: 10px 16px;
+  color: #627d98;
+  font-size: 12px;
+  border-top: 1px solid #1f2a35;
+}
+
+
+/* ===== Responsive ===== */
+@media (max-width: 600px) {
+    .panel-body-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .panel-body-header input[type="search"],
+    .panel-body-header input[type="date"] {
+        width: 100%;
+    }
+}
