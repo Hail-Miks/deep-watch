@@ -109,6 +109,46 @@ class PoseDetector:
         
         return results, visualized
     
+    def track(
+        self,
+        image: Union[str, np.ndarray],
+        tracker_type: str = "bytetrack.yaml"
+    ) -> Tuple[List, Optional[np.ndarray]]:
+        """
+        Track poses in a single image (with persistent object IDs).
+        
+        Args:
+            image: Image path or numpy array
+            tracker_type: Tracker type (e.g., "bytetrack.yaml" for ByteTrack)
+            
+        Returns:
+            Tuple of (results, visualized_image)
+        """
+        # Read image if path is provided
+        if isinstance(image, str):
+            img = cv2.imread(image)
+            if img is None:
+                raise ValueError(f"Failed to load image: {image}")
+        else:
+            img = image.copy()
+        
+        # Perform tracking
+        results = self.model.track(
+            source=img,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            tracker=tracker_type,
+            verbose=False,
+            persist=True
+        )
+        
+        # Visualize if requested
+        visualized = None
+        if len(results) > 0:
+            visualized = results[0].plot()
+        
+        return results, visualized
+    
     def visualize_results(
         self,
         image: np.ndarray,

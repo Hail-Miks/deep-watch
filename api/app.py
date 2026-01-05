@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import cv2
 
-# Ensure project root on path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -16,7 +15,6 @@ if PROJECT_ROOT not in sys.path:
 from deep_watch import PoseDetector  # noqa: E402
 
 
-# Point Flask to project-level templates/static
 app = Flask(
     __name__,
     template_folder=os.path.join(PROJECT_ROOT, "templates"),
@@ -24,8 +22,6 @@ app = Flask(
     static_url_path="/static",
 )
 
-
-# ----- Helpers (copied from training logic to keep inference consistent) -----
 
 def forward_fill_nan(a: np.ndarray) -> np.ndarray:
     b = a.copy()
@@ -115,7 +111,7 @@ def choose_person(people: List[Dict]) -> Dict:
     return sorted(people, key=score, reverse=True)[0]
 
 
-# ----- Model init -----
+# Model init
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 POSE = PoseDetector(model_path="model/yolov8n-pose.pt", conf_threshold=0.25, device=DEVICE)
@@ -136,7 +132,7 @@ def load_lstm():
     if _model is not None and _class_to_idx is not None:
         return _model, _class_to_idx, _window
     _ckpt = torch.load(CKPT_PATH, map_location=DEVICE)
-    from training.train_lstm import LSTMClassifier  # import here to avoid circulars
+    from training.train_lstm import LSTMClassifier  
     _input_size = int(_ckpt.get("input_size"))
     hidden = int(_ckpt.get("hidden", 128))
     layers = int(_ckpt.get("layers", 1))
@@ -148,7 +144,7 @@ def load_lstm():
     return _model, _class_to_idx, _window
 
 
-# ----- Video processing -----
+# Video processing 
 
 def extract_sequence_from_video(video_path: str) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
     cap = cv2.VideoCapture(video_path)
@@ -193,7 +189,7 @@ def extract_sequence_from_video(video_path: str) -> Tuple[float, np.ndarray, np.
     return fps, kpts, conf, bbox
 
 
-# ----- Routes -----
+# Routes
 
 @app.get("/health")
 def health():
@@ -224,11 +220,10 @@ def predict_video():
 
     feats = build_features(kpts, conf, bbox, include_vel=True)  # (T, F)
     F = feats.shape[1]
-    if F != model.fc.in_features:  # basic sanity vs input size
-        # Some models infer through LSTM then FC, use ckpt input_size instead
+    if F != model.fc.in_features:  
         pass
 
-    # Build windows for inference (non-overlapping by default)
+    # Build windows for inference
     windows = []
     starts = list(range(0, max(1, feats.shape[0] - window + 1), window))
     if not starts:
@@ -287,9 +282,12 @@ def generate_stream(video_source: int | str):
         return
 
     K = len(POSE.keypoint_names)
-    kbuf = deque(maxlen=window)
-    cbuf = deque(maxlen=window)
-    bbuf = deque(maxlen=window)
+    
+    # Per-track buffers for multi-person tracking with ByteTrack
+    track_kbufs = {}  # track_id -> deque of keypoints
+    track_cbufs = {}  # track_id -> deque of confidences
+    track_bbufs = {}  # track_id -> deque of bboxes
+    track_predictions = {}  # track_id -> (pred_class, confidence, color)
 
     idx_to_class = None
     if class_to_idx:
@@ -302,76 +300,111 @@ def generate_stream(video_source: int | str):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
 
-            results, _ = POSE.detect_image(frame, visualize=False)
+            # Use YOLOv8's built-in tracking
+            results, _ = POSE.track(frame)
             vis = frame.copy()
-            pred_text = "No model"
-            color = (0, 255, 255)
-            prob_map = None
 
             if results:
                 result = results[0]
                 try:
-                    vis = result.plot()
+                    vis = result.plot(labels=False, conf=False)
                 except Exception:
                     vis = frame.copy()
+                
+                # Extract tracked people with their IDs
                 people = POSE.get_keypoints(result)
-                person = choose_person(people)
-
-                if person:
+                
+                # Update per-track buffers and predictions
+                if hasattr(result, 'boxes') and result.boxes.id is not None:
+                    track_ids = result.boxes.id.cpu().numpy().astype(int)
+                else:
+                    track_ids = list(range(len(people)))
+                
+                for person_idx, (person, track_id) in enumerate(zip(people, track_ids)):
+                    track_id = int(track_id)
+                    
+                    # Initialize buffers if new track
+                    if track_id not in track_kbufs:
+                        track_kbufs[track_id] = deque(maxlen=window)
+                        track_cbufs[track_id] = deque(maxlen=window)
+                        track_bbufs[track_id] = deque(maxlen=window)
+                        track_predictions[track_id] = ("Unknown", 0.5, (0, 255, 255))
+                    
+                    # Extract and store keypoints
+                    b = person.get("bbox", {})
+                    bb = [b.get("x1", 0), b.get("y1", 0), b.get("x2", 100), b.get("y2", 100)]
+                    
                     k = np.full((K, 2), np.nan, dtype=np.float32)
                     c = np.zeros((K,), dtype=np.float32)
-                    bb = np.full((4,), np.nan, dtype=np.float32)
                     for i, name in enumerate(POSE.keypoint_names):
                         kp = person["keypoints"].get(name)
                         if kp is not None:
                             k[i, 0] = kp["x"]
                             k[i, 1] = kp["y"]
                             c[i] = kp["confidence"]
-                    if person.get("bbox"):
-                        b = person["bbox"]
-                        bb[:] = [b["x1"], b["y1"], b["x2"], b["y2"]]
-                else:
-                    k = np.full((K, 2), np.nan, dtype=np.float32)
-                    c = np.zeros((K,), dtype=np.float32)
-                    bb = np.full((4,), np.nan, dtype=np.float32)
-            else:
-                k = np.full((K, 2), np.nan, dtype=np.float32)
-                c = np.zeros((K,), dtype=np.float32)
-                bb = np.full((4,), np.nan, dtype=np.float32)
-
-            kbuf.append(k)
-            cbuf.append(c)
-            bbuf.append(bb)
-
-            if len(kbuf) >= 1 and model is not None:
-                karr = np.stack(list(kbuf), axis=0)
-                carr = np.stack(list(cbuf), axis=0)
-                barr = np.stack(list(bbuf), axis=0)
-                feats = build_features(karr, carr, barr, include_vel=True)
-                if feats.shape[0] < window:
-                    pad = np.zeros((window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
-                    wfeats = np.vstack([feats, pad])
-                else:
-                    wfeats = feats[-window:]
-                x = torch.from_numpy(wfeats[None, ...]).to(DEVICE)
-                with torch.no_grad():
-                    logits = model(x)
-                    probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                if idx_to_class:
-                    pred_idx = int(np.argmax(probs))
-                    pred_class = idx_to_class.get(pred_idx, str(pred_idx))
-                    prob_map = {idx_to_class[i]: float(p) for i, p in enumerate(probs)}
-                    pred_text = f"{pred_class} ({probs[pred_idx]:.2f})"
-                    color = (0, 0, 255) if pred_class.lower().startswith('drowning') and probs[pred_idx] > 0.5 else (0, 200, 0)
-                else:
-                    pred_text = f"probs={probs}"
-
-            h, w = vis.shape[:2]
-            overlay = vis.copy()
-            cv2.rectangle(overlay, (0, 0), (w, 60), (0, 0, 0), -1)
-            alpha = 0.4
-            vis = cv2.addWeighted(overlay, alpha, vis, 1 - alpha, 0)
-            cv2.putText(vis, pred_text, (20, 40), cv2.FONT_HERSHEY_DUPLEX, 1.0, color, 2)
+                    
+                    track_kbufs[track_id].append(k)
+                    track_cbufs[track_id].append(c)
+                    track_bbufs[track_id].append(bb)
+                
+                # Perform LSTM inference for each active track
+                if model is not None:
+                    for track_id in set(track_ids if isinstance(track_ids, list) else track_ids.tolist()):
+                        track_id = int(track_id)
+                        kbuf = track_kbufs[track_id]
+                        cbuf = track_cbufs[track_id]
+                        bbuf = track_bbufs[track_id]
+                        
+                        if len(kbuf) >= 1:
+                            karr = np.stack(list(kbuf), axis=0)
+                            carr = np.stack(list(cbuf), axis=0)
+                            barr = np.stack(list(bbuf), axis=0)
+                            feats = build_features(karr, carr, barr, include_vel=True)
+                            if feats.shape[0] < window:
+                                pad = np.zeros((window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
+                                wfeats = np.vstack([feats, pad])
+                            else:
+                                wfeats = feats[-window:]
+                            
+                            x = torch.from_numpy(wfeats[None, ...]).to(DEVICE)
+                            with torch.no_grad():
+                                logits = model(x)
+                                probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+                            
+                            if idx_to_class:
+                                pred_idx = int(np.argmax(probs))
+                                pred_class = idx_to_class.get(pred_idx, str(pred_idx))
+                                pred_conf = float(probs[pred_idx])
+                                is_drowning = pred_class.lower().startswith('drowning') and pred_conf > 0.5
+                                color = (0, 0, 255) if is_drowning else (0, 200, 0)
+                                track_predictions[track_id] = (pred_class, pred_conf, color)
+                
+                # Draw track IDs and predictions on top of Ultralytics visualization
+                h, w = vis.shape[:2]
+                if hasattr(result, 'boxes') and result.boxes.id is not None:
+                    for box, track_id in zip(result.boxes.xyxy, track_ids):
+                        track_id = int(track_id)
+                        x1, y1, x2, y2 = map(int, box[:4])
+                        pred_class, pred_conf, color = track_predictions.get(track_id, ("Unknown", 0.5, (0, 255, 255)))
+                        
+                        label = f"ID:{track_id} {pred_class} ({pred_conf:.2f})"
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 1
+                        thickness = 2
+                        text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+                        
+                        # Position at top-left of bbox
+                        label_x = x1
+                        label_y = max(y1 - 5, text_size[1] + 5)
+                        
+                        # Background rectangle
+                        cv2.rectangle(vis, 
+                                    (label_x - 2, label_y - text_size[1] - 5),
+                                    (label_x + text_size[0] + 5, label_y + 3),
+                                    color, -1)
+                        
+                        # Text color
+                        cv2.putText(vis, label, (label_x, label_y), font, font_scale, (255, 255, 255), thickness)
 
             ret, buf = cv2.imencode('.jpg', vis)
             if not ret:

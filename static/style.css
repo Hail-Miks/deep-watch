@@ -66,13 +66,13 @@ main {
   background: #000;
 }
 
-.info .kv {
+.info .status-area {
   display: flex;
   justify-content: space-between;
   padding: 6px 0;
   border-bottom: 1px dashed #223244;
 }
-.info .kv span:first-child {
+.info .status-area span:first-child {
   color: #9fb3c8;
 }
 .info .hint {
