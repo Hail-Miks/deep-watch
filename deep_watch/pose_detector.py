@@ -63,13 +63,7 @@ class PoseDetector:
             'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
         ]
         
-        # Skeleton connections for visualization
-        self.skeleton = [
-            (0, 1), (0, 2), (1, 3), (2, 4),  # Head
-            (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),  # Arms
-            (5, 11), (6, 12), (11, 12),  # Torso
-            (11, 13), (13, 15), (12, 14), (14, 16)  # Legs
-        ]
+
     
     def detect_image(
         self,
@@ -148,53 +142,6 @@ class PoseDetector:
             visualized = results[0].plot()
         
         return results, visualized
-    
-    def visualize_results(
-        self,
-        image: np.ndarray,
-        result,
-        line_thickness: int = 2,
-        keypoint_radius: int = 5
-    ) -> np.ndarray:
-        """
-        Visualize pose detection results on the image.
-        
-        Args:
-            image: Input image (numpy array)
-            result: Detection result from model
-            line_thickness: Thickness of skeleton lines
-            keypoint_radius: Radius of keypoint circles
-            
-        Returns:
-            Visualized image
-        """
-        vis_image = image.copy()
-        
-        # Check if keypoints are available
-        if result.keypoints is None or len(result.keypoints) == 0:
-            return vis_image
-        
-        # Get keypoints data
-        keypoints = result.keypoints.xy.cpu().numpy()  # Shape: (num_people, 17, 2)
-        confidences = result.keypoints.conf.cpu().numpy()  # Shape: (num_people, 17)
-        
-        # Draw for each detected person
-        for person_kpts, person_conf in zip(keypoints, confidences):
-            # Draw skeleton connections
-            for connection in self.skeleton:
-                start_idx, end_idx = connection
-                if person_conf[start_idx] > 0.5 and person_conf[end_idx] > 0.5:
-                    start_point = tuple(person_kpts[start_idx].astype(int))
-                    end_point = tuple(person_kpts[end_idx].astype(int))
-                    cv2.line(vis_image, start_point, end_point, (0, 255, 0), line_thickness)
-            
-            # Draw keypoints
-            for kpt, conf in zip(person_kpts, person_conf):
-                if conf > 0.5:
-                    center = tuple(kpt.astype(int))
-                    cv2.circle(vis_image, center, keypoint_radius, (0, 0, 255), -1)
-        
-        return vis_image
     
     def get_keypoints(self, result) -> List[dict]:
         """
