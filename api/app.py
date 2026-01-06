@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 from typing import Dict, List, Tuple
 
 from flask import Flask, request, jsonify, render_template, Response
@@ -114,7 +115,7 @@ def choose_person(people: List[Dict]) -> Dict:
 # Model init
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-POSE = PoseDetector(model_path="model/yolov8n-pose.pt", conf_threshold=0.25, device=DEVICE)
+POSE = PoseDetector(model_path="model/yolov8n-pose.pt", conf_threshold=0.15, device=DEVICE)
 
 CKPT_PATH = os.environ.get("LSTM_CKPT", os.path.join("runs", "lstm", "best.pt"))
 if not os.path.isfile(CKPT_PATH):
@@ -271,10 +272,12 @@ def generate_stream(video_source: int | str):
         model, class_to_idx, window = None, None, 60
 
     cap = cv2.VideoCapture(video_source)
+    frame_count = 0
+    start_time = time.time()
     if not cap.isOpened():
         def gen_error():
             img = np.zeros((360, 640, 3), dtype=np.uint8)
-            cv2.putText(img, "Camera open failed", (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+            cv2.putText(img, "No camera input detected", (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
             ret, buf = cv2.imencode('.jpg', img)
             if ret:
                 yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
@@ -300,8 +303,8 @@ def generate_stream(video_source: int | str):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
 
-            # Use YOLOv8's built-in tracking
-            results, _ = POSE.track(frame)
+            # Use YOLOv8's built-in tracking with custom ByteTrack config (longer track_buffer)
+            results, _ = POSE.track(frame, tracker_type=os.path.join(PROJECT_ROOT, "tracker", "bytetrack_custom.yaml"))
             vis = frame.copy()
 
             if results:
@@ -405,6 +408,19 @@ def generate_stream(video_source: int | str):
                         
                         # Text color
                         cv2.putText(vis, label, (label_x, label_y), font, font_scale, (255, 255, 255), thickness)
+
+            # FPS overlay
+            # frame_count += 1
+            # elapsed = time.time() - start_time
+            # fps = frame_count / elapsed if elapsed > 0 else 0.0
+            # h, w = vis.shape[:2]
+            # fps_label = f"FPS: {fps:.1f}"
+            # font = cv2.FONT_HERSHEY_SIMPLEX
+            # font_scale = 0.8
+            # thickness = 2
+            # text_size = cv2.getTextSize(fps_label, font, font_scale, thickness)[0]
+            # x, y = 10, h - 10
+            # cv2.putText(vis, fps_label, (x, y), font, font_scale, (255, 255, 255), thickness)
 
             ret, buf = cv2.imencode('.jpg', vis)
             if not ret:

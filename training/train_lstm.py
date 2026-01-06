@@ -168,6 +168,7 @@ class WindowedKeypointDataset(Dataset):
 class LSTMClassifier(nn.Module):
     def __init__(self, input_size: int, hidden_size: int = 128, num_layers: int = 1, num_classes: int = 2, dropout: float = 0.1):
         super().__init__()
+        # Dropout is ignored by PyTorch when num_layers == 1; we keep parameter for flexibility
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
         self.fc = nn.Linear(hidden_size, num_classes)
 
@@ -237,12 +238,14 @@ def main():
     p.add_argument("--epochs", type=int, default=5)
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--window", type=int, default=60)
+    p.add_argument("--window", type=int, default=90)
     p.add_argument("--stride", type=int, default=30)
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--layers", type=int, default=1)
+    p.add_argument("--dropout", type=float, default=0.2, help="Dropout for LSTM (ignored when layers=1)")
+    p.add_argument("--class-weights", default="auto", choices=["none", "auto"], help="Use class weights in loss (auto = inverse frequency)")
     p.add_argument("--val-ratio", type=float, default=0.2)
-    p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"]) 
+    p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     args = p.parse_args()
 
     device = (
@@ -265,8 +268,23 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    model = LSTMClassifier(input_size=input_size, hidden_size=args.hidden, num_layers=args.layers, num_classes=len(class_names)).to(device)
-    criterion = nn.CrossEntropyLoss()
+    model = LSTMClassifier(input_size=input_size, hidden_size=args.hidden, num_layers=args.layers, num_classes=len(class_names), dropout=args.dropout).to(device)
+
+    # Optional class weighting to address imbalance
+    if args.class_weights == "auto":
+        counts = {c: 0 for c in class_names}
+        for it in items:
+            counts[it["label"]] += 1
+        weights = []
+        total = sum(counts.values())
+        for c in class_names:
+            cnt = max(1, counts[c])
+            weights.append(total / cnt)
+        weight_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
+        criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+        print(f"Class weights: {weights}")
+    else:
+        criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     best_val_acc = 0.0

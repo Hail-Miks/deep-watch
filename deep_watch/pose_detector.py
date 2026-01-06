@@ -63,8 +63,6 @@ class PoseDetector:
             'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
         ]
         
-
-    
     def detect_image(
         self,
         image: Union[str, np.ndarray],

@@ -2,9 +2,9 @@ import os
 import cv2
 
 """
-Extract frames from each .mp4 clip in dataset/not_drowning.
+Extract frames from each .mp4 clip in dataset/drowning.
 For a video named clip_1.mp4, frames will be saved to:
-dataset/not_drowning/clip_1/frame_0001.jpg, frame_0002.jpg, ...
+dataset/drowning/clip_1/frame_0001.jpg, frame_0002.jpg, ...
 """
 
 def extract_frames_from_video(video_file_path: str, output_dir: str) -> None:
@@ -30,7 +30,7 @@ def extract_frames_from_video(video_file_path: str, output_dir: str) -> None:
 
 def main():
     dataset_dir = os.path.dirname(__file__)
-    source_dir = os.path.join(dataset_dir, "not_drowning")
+    source_dir = os.path.join(dataset_dir, "drowning")
 
     if not os.path.isdir(source_dir):
         print(f"Error: Source directory does not exist: {source_dir}")
