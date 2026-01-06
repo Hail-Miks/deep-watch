@@ -434,7 +434,7 @@ def generate_stream(video_source: int | str):
 
 @app.get("/video_feed")
 def video_feed():
-    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample.avi")
+    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.mp4")
     try:
         source_val = int(source)
     except ValueError:
