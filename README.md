@@ -18,9 +18,6 @@ cd deep-watch
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Install the package
-pip install -e .
 ```
 
 ### Dependencies
@@ -68,19 +65,6 @@ YOLOv8 offers several pose models with different sizes and performance character
 | yolov8x-pose.pt | Extra Large | Slowest  | Best     |
 
 The model will be automatically downloaded on first use.
-
-## GPU Support
-
-To use GPU acceleration:
-
-```python
-detector = PoseDetector(device='cuda')
-```
-
-Make sure you have:
-
-- NVIDIA GPU with CUDA support
-- PyTorch with CUDA installed
 
 ## Acknowledgments
 
