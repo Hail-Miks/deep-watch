@@ -1,6 +1,6 @@
 # Deep Watch - Integrating YOLOv8-Pose, ByteTrack, and Long Short Term Memory (LSTM) for a Real-time Drowning Detection System
 
-Co-developing a real-time drowning detection system that integrates YOLOv8-Pose for human pose estimation, ByteTrack for multi-object tracking, and LSTM for temporal sequence analysis to distinguish normal swimming from distress behaviors in residential and public pools. Responsibilities include dataset curation from pool environments, model training and evaluation using metrics such as mAP, MOTA, precision, recall, and F1 score, and contributing to a modular system architecture with a Flask-based interface and SQL logging to support lifeguards through timely, AI-driven safety alerts.​
+A real-time drowning detection system that integrates YOLOv8-Pose for human pose estimation, ByteTrack for multi-object tracking, and LSTM for temporal sequence analysis to distinguish normal swimming from distress behaviors in residential and public pools.
 
 ## Installation
 
