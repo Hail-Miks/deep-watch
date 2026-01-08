@@ -33,7 +33,7 @@ ENV/
 *~
 
 # Models and Data
-*.pt
+
 *.pth
 *.onnx
 *.weights
@@ -44,7 +44,7 @@ models/weights/
 # Output
 output/
 results/
-runs/
+
 
 # OS
 .DS_Store
