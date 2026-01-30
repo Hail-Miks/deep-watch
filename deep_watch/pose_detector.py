@@ -29,7 +29,8 @@ class PoseDetector:
         model_path: str = "model/yolov8n-pose.pt",
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        imgsz: int = 640
     ):
         """
         Initialize the PoseDetector with YOLOv8 model.
@@ -39,11 +40,13 @@ class PoseDetector:
             conf_threshold: Confidence threshold for detections (0.0-1.0)
             iou_threshold: IoU threshold for Non-Maximum Suppression (0.0-1.0)
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detect)
+            imgsz: Input image size for inference (smaller = faster, e.g., 640, 480, 320)
         """
         self.model_path = model_path
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.device = device
+        self.imgsz = imgsz
         
         # Initialize YOLOv8 model
         print(f"Loading YOLOv8 pose model: {model_path}")
@@ -91,6 +94,7 @@ class PoseDetector:
             source=img,
             conf=self.conf_threshold,
             iou=self.iou_threshold,
+            imgsz=self.imgsz,
             verbose=False
         )
         
@@ -129,6 +133,7 @@ class PoseDetector:
             source=img,
             conf=self.conf_threshold,
             iou=self.iou_threshold,
+            imgsz=self.imgsz,
             tracker=tracker_type,
             verbose=False,
             persist=True

@@ -21,11 +21,73 @@
       </section>
 
       <section class="panel info">
-        <div class="panel-header">System</div>
+        <div class="panel-header">System Statistics</div>
         <div class="panel-body">
           <div class="status-area">
             <span>Status:</span> <span id="simpleStatus">Loading…</span>
           </div>
+          
+          <div class="stats-section">
+            <div class="stats-header">Detection</div>
+            <div class="stat-row">
+              <span class="stat-label">People in Frame:</span>
+              <span class="stat-value" id="activeTracks">0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Total Tracked:</span>
+              <span class="stat-value" id="peopleTracked">0</span>
+            </div>
+            <div class="stat-row alert-row" id="alertRow">
+              <span class="stat-label">⚠️ Drowning Alerts:</span>
+              <span class="stat-value alert-value" id="drowningAlerts">0</span>
+            </div>
+            <div class="alert-ids" id="alertIds"></div>
+          </div>
+
+          <div class="stats-section">
+            <div class="stats-header">Performance</div>
+            <div class="stat-row">
+              <span class="stat-label">FPS:</span>
+              <span class="stat-value" id="fps">0.0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Frames Total:</span>
+              <span class="stat-value" id="frameCount">0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Frames Processed:</span>
+              <span class="stat-value" id="processedFrames">0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Frames Skipped:</span>
+              <span class="stat-value" id="skippedFrames">0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">LSTM Inferences:</span>
+              <span class="stat-value" id="lstmInferences">0</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Inference:</span>
+              <span class="stat-value"><span id="avgInference">0</span> ms</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Uptime:</span>
+              <span class="stat-value" id="uptime">0s</span>
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <div class="stats-header">System</div>
+            <div class="stat-row">
+              <span class="stat-label">Camera:</span>
+              <span class="stat-value" id="cameraStatus">—</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Model:</span>
+              <span class="stat-value" id="modelStatus">—</span>
+            </div>
+          </div>
+
           <div class="hint">Prediction is overlaid on the video stream.</div>
         </div>
       </section>
@@ -36,6 +98,18 @@
     </footer>
 
     <script>
+      function formatUptime(seconds) {
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) {
+          const m = Math.floor(seconds / 60);
+          const s = seconds % 60;
+          return `${m}m ${s}s`;
+        }
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        return `${h}h ${m}m`;
+      }
+
       async function refreshHealth() {
         const statusEl = document.getElementById("simpleStatus");
         const headerEl = document.getElementById("statusText");
@@ -51,8 +125,59 @@
           headerEl.textContent = "Service Unavailable";
         }
       }
+
+      async function refreshStats() {
+        try {
+          const res = await fetch("/stats");
+          const data = await res.json();
+          
+          // Detection stats
+          document.getElementById("activeTracks").textContent = data.active_tracks || 0;
+          document.getElementById("peopleTracked").textContent = data.people_tracked || 0;
+          
+          const alertCount = data.drowning_alerts || 0;
+          const alertEl = document.getElementById("drowningAlerts");
+          const alertRow = document.getElementById("alertRow");
+          const alertIds = document.getElementById("alertIds");
+          
+          alertEl.textContent = alertCount;
+          if (alertCount > 0) {
+            alertRow.classList.add("active-alert");
+            alertIds.textContent = `Track IDs: ${data.drowning_track_ids.join(", ")}`;
+            alertIds.style.display = "block";
+          } else {
+            alertRow.classList.remove("active-alert");
+            alertIds.style.display = "none";
+          }
+          
+          // Performance stats
+          document.getElementById("fps").textContent = data.fps?.toFixed(1) || "0.0";
+          document.getElementById("frameCount").textContent = data.frame_count?.toLocaleString() || 0;
+          document.getElementById("processedFrames").textContent = data.processed_frames?.toLocaleString() || 0;
+          document.getElementById("skippedFrames").textContent = data.skipped_frames?.toLocaleString() || 0;
+          document.getElementById("lstmInferences").textContent = data.lstm_inferences?.toLocaleString() || 0;
+          document.getElementById("avgInference").textContent = data.avg_inference_ms?.toFixed(1) || "0";
+          document.getElementById("uptime").textContent = formatUptime(data.uptime_seconds || 0);
+          
+          // System stats
+          const cameraEl = document.getElementById("cameraStatus");
+          const modelEl = document.getElementById("modelStatus");
+          
+          cameraEl.textContent = data.camera_connected ? "Connected" : "Disconnected";
+          cameraEl.className = "stat-value " + (data.camera_connected ? "status-ok" : "status-error");
+          
+          modelEl.textContent = data.model_loaded ? "Loaded" : "Not Loaded";
+          modelEl.className = "stat-value " + (data.model_loaded ? "status-ok" : "status-warning");
+          
+        } catch (e) {
+          console.error("Failed to fetch stats:", e);
+        }
+      }
+
       refreshHealth();
+      refreshStats();
       setInterval(refreshHealth, 5000);
+      setInterval(refreshStats, 500);
     </script>
   </body>
 </html>
