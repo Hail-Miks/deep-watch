@@ -1,3 +1,4 @@
+from collections import deque
 import os
 import sys
 import tempfile
@@ -10,7 +11,8 @@ import torch
 import cv2
 import threading
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), os.pardir))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -20,7 +22,7 @@ from deep_watch import PoseDetector  # noqa: E402
 # ============================================================================
 # PERFORMANCE CONFIGURATION - Tune these for edge devices / lower-end laptops
 # ============================================================================
-# 
+#
 # PRESETS: Uncomment ONE preset below, or customize individual settings
 #
 # ---------- PRESET: HIGH PERFORMANCE (powerful GPU/desktop) ----------
@@ -56,34 +58,43 @@ from deep_watch import PoseDetector  # noqa: E402
 class PerfConfig:
     """
     Performance settings - EDIT THESE VALUES DIRECTLY to tune for your hardware.
-    
+
     Lower values = better quality but slower
     Higher values = faster but lower quality/accuracy
     """
-    
+
     # ==================== EDIT THESE VALUES ====================
-    
+
     # Frame Processing
-    PROCESS_EVERY_N_FRAMES: int = 2       # 1=all frames, 2=every other, 3=every 3rd (higher=faster)
-    INPUT_SCALE: float = 1.0              # 1.0=full, 0.75=75%, 0.5=half resolution (lower=faster)
-    
-    # LSTM Inference Throttling  
-    LSTM_INFERENCE_INTERVAL: int = 5      # Run LSTM every N processed frames (higher=faster)
-    LSTM_MIN_BUFFER_FRAMES: int = 15      # Min frames before first inference (lower=faster response)
-    LSTM_BATCH_INFERENCE: bool = True     # Batch all tracks together (keep True for efficiency)
-    
+    # 1=all frames, 2=every other, 3=every 3rd (higher=faster)
+    PROCESS_EVERY_N_FRAMES: int = 2
+    # 1.0=full, 0.75=75%, 0.5=half resolution (lower=faster)
+    INPUT_SCALE: float = 1.0
+
+    # LSTM Inference Throttling
+    # Run LSTM every N processed frames (higher=faster)
+    LSTM_INFERENCE_INTERVAL: int = 5
+    # Min frames before first inference (lower=faster response)
+    LSTM_MIN_BUFFER_FRAMES: int = 15
+    # Batch all tracks together (keep True for efficiency)
+    LSTM_BATCH_INFERENCE: bool = True
+
     # Output Quality
-    JPEG_QUALITY: int = 80                # 50-95, lower=faster/smaller, higher=better quality
-    OUTPUT_SCALE: float = 1.0             # 1.0=full, 0.75=75% output size (lower=faster)
-    
-    # Memory Management  
+    # 50-95, lower=faster/smaller, higher=better quality
+    JPEG_QUALITY: int = 80
+    # 1.0=full, 0.75=75% output size (lower=faster)
+    OUTPUT_SCALE: float = 1.0
+
+    # Memory Management
     MAX_TRACK_AGE_FRAMES: int = 300       # Remove tracks not seen for N frames
     TRACK_CLEANUP_INTERVAL: int = 100     # Run cleanup every N frames
-    
+
     # Model Settings
-    YOLO_IMGSZ: int = 640                 # YOLO input: 640 (accurate), 480, 320 (fast)
-    HALF_PRECISION: bool = False          # True=FP16 on CUDA (faster but less accurate)
-    
+    # YOLO input: 640 (accurate), 480, 320 (fast)
+    YOLO_IMGSZ: int = 640
+    # True=FP16 on CUDA (faster but less accurate)
+    HALF_PRECISION: bool = False
+
     # ==================== END CONFIGURATION ====================
 
 
@@ -112,7 +123,8 @@ def normalize_keypoints(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray) ->
     out = kpts.copy().astype(np.float32)
     for t in range(T):
         frame = out[t]
-        conf_t = conf[t] if conf is not None and len(conf) == T else np.zeros(K)
+        conf_t = conf[t] if conf is not None and len(
+            conf) == T else np.zeros(K)
 
         def valid_pair(i, j, thr=0.2):
             return conf_t[i] > thr and conf_t[j] > thr and not (np.any(np.isnan(frame[i])) or np.any(np.isnan(frame[j])))
@@ -157,7 +169,8 @@ def normalize_keypoints(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray) ->
 
 def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include_vel: bool = True) -> np.ndarray:
     kpts_filled = forward_fill_nan(kpts)
-    conf_filled = forward_fill_nan(conf[:, :, None])[:, :, 0] if conf is not None else None
+    conf_filled = forward_fill_nan(conf[:, :, None])[
+        :, :, 0] if conf is not None else None
     bbox_filled = forward_fill_nan(bbox)
     kpts_norm = normalize_keypoints(kpts_filled, conf_filled, bbox_filled)
     pos = kpts_norm.reshape(kpts_norm.shape[0], -1)  # (T, 34)
@@ -187,8 +200,8 @@ def choose_person(people: List[Dict]) -> Dict:
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 POSE = PoseDetector(
-    model_path="model/yolov8n-pose.pt", 
-    conf_threshold=0.15, 
+    model_path="model/yolov8n-pose.pt",
+    conf_threshold=0.15,
     device=DEVICE,
     imgsz=PerfConfig.YOLO_IMGSZ
 )
@@ -197,14 +210,17 @@ POSE = PoseDetector(
 print(f"[PerfConfig] Device: {DEVICE}")
 print(f"[PerfConfig] Process every {PerfConfig.PROCESS_EVERY_N_FRAMES} frames")
 print(f"[PerfConfig] Input scale: {PerfConfig.INPUT_SCALE}")
-print(f"[PerfConfig] LSTM inference every {PerfConfig.LSTM_INFERENCE_INTERVAL} processed frames")
+print(
+    f"[PerfConfig] LSTM inference every {PerfConfig.LSTM_INFERENCE_INTERVAL} processed frames")
 print(f"[PerfConfig] YOLO image size: {PerfConfig.YOLO_IMGSZ}")
 print(f"[PerfConfig] JPEG quality: {PerfConfig.JPEG_QUALITY}")
 print(f"[PerfConfig] Half precision: {PerfConfig.HALF_PRECISION}")
 
-CKPT_PATH = os.environ.get("LSTM_CKPT", os.path.join("runs", "lstm", "best.pt"))
+CKPT_PATH = os.environ.get(
+    "LSTM_CKPT", os.path.join("runs", "lstm", "best.pt"))
 if not os.path.isfile(CKPT_PATH):
-    print(f"Warning: LSTM checkpoint not found at {CKPT_PATH}. Inference will fail until provided.")
+    print(
+        f"Warning: LSTM checkpoint not found at {CKPT_PATH}. Inference will fail until provided.")
 
 # Live statistics (thread-safe)
 _stats_lock = threading.Lock()
@@ -225,11 +241,14 @@ _live_stats = {
     "avg_inference_ms": 0.0,
 }
 
+
 def update_stats(**kwargs):
     with _stats_lock:
         _live_stats.update(kwargs)
         if _live_stats["start_time"] is not None:
-            _live_stats["uptime_seconds"] = time.time() - _live_stats["start_time"]
+            _live_stats["uptime_seconds"] = time.time() - \
+                _live_stats["start_time"]
+
 
 def get_stats():
     with _stats_lock:
@@ -237,6 +256,7 @@ def get_stats():
         if stats["start_time"] is not None:
             stats["uptime_seconds"] = time.time() - stats["start_time"]
         return stats
+
 
 _ckpt = None
 _model = None
@@ -250,19 +270,20 @@ def load_lstm():
     if _model is not None and _class_to_idx is not None:
         return _model, _class_to_idx, _window
     _ckpt = torch.load(CKPT_PATH, map_location=DEVICE)
-    from training.train_lstm import LSTMClassifier  
+    from training.train_lstm import LSTMClassifier
     _input_size = int(_ckpt.get("input_size"))
     hidden = int(_ckpt.get("hidden", 128))
     layers = int(_ckpt.get("layers", 1))
     _class_to_idx = _ckpt.get("class_to_idx")
     _window = int(_ckpt.get("window", 60))
-    _model = LSTMClassifier(input_size=_input_size, hidden_size=hidden, num_layers=layers, num_classes=len(_class_to_idx)).to(DEVICE)
+    _model = LSTMClassifier(input_size=_input_size, hidden_size=hidden,
+                            num_layers=layers, num_classes=len(_class_to_idx)).to(DEVICE)
     _model.load_state_dict(_ckpt["model_state"])
     _model.eval()
     return _model, _class_to_idx, _window
 
 
-# Video processing 
+# Video processing
 
 def extract_sequence_from_video(video_path: str) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
     cap = cv2.VideoCapture(video_path)
@@ -374,7 +395,7 @@ def predict_video():
 
     feats = build_features(kpts, conf, bbox, include_vel=True)  # (T, F)
     F = feats.shape[1]
-    if F != model.fc.in_features:  
+    if F != model.fc.in_features:
         pass
 
     # Build windows for inference
@@ -385,7 +406,8 @@ def predict_video():
     for s in starts:
         w = feats[s:s+window]
         if w.shape[0] < window:
-            pad = np.zeros((window - w.shape[0], feats.shape[1]), dtype=w.dtype)
+            pad = np.zeros(
+                (window - w.shape[0], feats.shape[1]), dtype=w.dtype)
             w = np.vstack([w, pad])
         windows.append(w)
 
@@ -410,9 +432,6 @@ def predict_video():
     })
 
 
-from collections import deque
-
-
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -433,22 +452,24 @@ def generate_stream(video_source: int | str):
     update_stats(model_loaded=model_loaded, start_time=time.time())
 
     cap = cv2.VideoCapture(video_source)
-    
+
     if not cap.isOpened():
         update_stats(camera_connected=False)
+
         def gen_error():
             img = np.zeros((360, 640, 3), dtype=np.uint8)
-            cv2.putText(img, "No camera input detected", (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+            cv2.putText(img, "No camera input detected", (20, 180),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
             ret, buf = cv2.imencode('.jpg', img)
             if ret:
                 yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
         yield from gen_error()
         return
-    
+
     update_stats(camera_connected=True)
 
     K = len(POSE.keypoint_names)
-    
+
     # Per-track buffers for multi-person tracking with ByteTrack
     track_kbufs = {}  # track_id -> deque of keypoints
     track_cbufs = {}  # track_id -> deque of confidences
@@ -468,10 +489,10 @@ def generate_stream(video_source: int | str):
     fps_update_interval = 10
     lstm_inference_count = 0
     total_inference_time_ms = 0.0
-    
+
     # JPEG encoding params
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, PerfConfig.JPEG_QUALITY]
-    
+
     # Cache for last visualization (used when skipping frames)
     last_vis = None
     last_vis_bytes = None
@@ -486,70 +507,75 @@ def generate_stream(video_source: int | str):
                 continue
 
             frame_count += 1
-            
+
             # Frame skipping - only process every N frames
-            should_process = (frame_count % PerfConfig.PROCESS_EVERY_N_FRAMES == 0)
-            
+            should_process = (frame_count %
+                              PerfConfig.PROCESS_EVERY_N_FRAMES == 0)
+
             if not should_process:
                 skipped_frames += 1
                 # Return cached frame if available
                 if last_vis_bytes is not None:
                     yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + last_vis_bytes + b"\r\n")
                 continue
-            
+
             processed_frame_count += 1
-            
+
             # Downscale input if configured
             process_frame = frame
             original_h, original_w = frame.shape[:2]
             if PerfConfig.INPUT_SCALE < 1.0:
                 new_w = int(original_w * PerfConfig.INPUT_SCALE)
                 new_h = int(original_h * PerfConfig.INPUT_SCALE)
-                process_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                process_frame = cv2.resize(
+                    frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
             # Use YOLOv8's built-in tracking with custom ByteTrack config
-            results, _ = POSE.track(process_frame, tracker_type=os.path.join(PROJECT_ROOT, "tracker", "bytetrack_custom.yaml"))
-            
+            results, _ = POSE.track(process_frame, tracker_type=os.path.join(
+                PROJECT_ROOT, "tracker", "bytetrack_custom.yaml"))
+
             # Use original frame for visualization
             vis = frame.copy()
 
             if results:
                 result = results[0]
-                
+
                 # Scale keypoints back to original resolution if downscaled
                 scale_factor = 1.0 / PerfConfig.INPUT_SCALE if PerfConfig.INPUT_SCALE < 1.0 else 1.0
-                
+
                 try:
                     vis = result.plot(labels=False, conf=False)
                     # Resize visualization back to original if needed
                     if PerfConfig.INPUT_SCALE < 1.0:
-                        vis = cv2.resize(vis, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
+                        vis = cv2.resize(
+                            vis, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
                 except Exception:
                     vis = frame.copy()
-                
+
                 # Extract tracked people with their IDs
                 people = POSE.get_keypoints(result)
-                
+
                 # Update per-track buffers and predictions
                 if hasattr(result, 'boxes') and result.boxes.id is not None:
                     track_ids = result.boxes.id.cpu().numpy().astype(int)
                 else:
                     track_ids = list(range(len(people)))
-                
+
                 current_track_ids = set()
                 for person_idx, (person, track_id) in enumerate(zip(people, track_ids)):
                     track_id = int(track_id)
                     current_track_ids.add(track_id)
-                    
+
                     # Initialize buffers if new track
                     if track_id not in track_kbufs:
                         track_kbufs[track_id] = deque(maxlen=window)
                         track_cbufs[track_id] = deque(maxlen=window)
                         track_bbufs[track_id] = deque(maxlen=window)
-                        track_predictions[track_id] = ("Unknown", 0.5, (0, 255, 255))
-                    
+                        track_predictions[track_id] = (
+                            "Unknown", 0.5, (0, 255, 255))
+
                     track_last_seen[track_id] = frame_count
-                    
+
                     # Extract and store keypoints (scale back if needed)
                     b = person.get("bbox", {})
                     bb = [
@@ -558,7 +584,7 @@ def generate_stream(video_source: int | str):
                         b.get("x2", 100) * scale_factor,
                         b.get("y2", 100) * scale_factor
                     ]
-                    
+
                     k = np.full((K, 2), np.nan, dtype=np.float32)
                     c = np.zeros((K,), dtype=np.float32)
                     for i, name in enumerate(POSE.keypoint_names):
@@ -567,28 +593,28 @@ def generate_stream(video_source: int | str):
                             k[i, 0] = kp["x"] * scale_factor
                             k[i, 1] = kp["y"] * scale_factor
                             c[i] = kp["confidence"]
-                    
+
                     track_kbufs[track_id].append(k)
                     track_cbufs[track_id].append(c)
                     track_bbufs[track_id].append(bb)
-                
+
                 # LSTM inference - throttled and batched
                 drowning_ids = []
                 should_run_lstm = (
-                    model is not None and 
+                    model is not None and
                     processed_frame_count % PerfConfig.LSTM_INFERENCE_INTERVAL == 0
                 )
-                
+
                 if should_run_lstm:
                     inference_start = time.time()
-                    
+
                     # Collect tracks eligible for inference
                     eligible_tracks = []
                     for track_id in current_track_ids:
                         track_id = int(track_id)
                         if len(track_kbufs.get(track_id, [])) >= PerfConfig.LSTM_MIN_BUFFER_FRAMES:
                             eligible_tracks.append(track_id)
-                    
+
                     if eligible_tracks:
                         if PerfConfig.LSTM_BATCH_INFERENCE and len(eligible_tracks) > 1:
                             # Batched inference - process all tracks at once
@@ -597,37 +623,44 @@ def generate_stream(video_source: int | str):
                                 kbuf = track_kbufs[track_id]
                                 cbuf = track_cbufs[track_id]
                                 bbuf = track_bbufs[track_id]
-                                
+
                                 karr = np.stack(list(kbuf), axis=0)
                                 carr = np.stack(list(cbuf), axis=0)
                                 barr = np.stack(list(bbuf), axis=0)
-                                feats = build_features(karr, carr, barr, include_vel=True)
-                                
+                                feats = build_features(
+                                    karr, carr, barr, include_vel=True)
+
                                 if feats.shape[0] < window:
-                                    pad = np.zeros((window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
+                                    pad = np.zeros(
+                                        (window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
                                     wfeats = np.vstack([feats, pad])
                                 else:
                                     wfeats = feats[-window:]
                                 batch_features.append(wfeats)
-                            
+
                             # Single batched forward pass
-                            x = torch.from_numpy(np.stack(batch_features, axis=0)).to(DEVICE)
+                            x = torch.from_numpy(
+                                np.stack(batch_features, axis=0)).to(DEVICE)
                             if PerfConfig.HALF_PRECISION and DEVICE == "cuda":
                                 x = x.half()
-                            
+
                             with torch.no_grad():
                                 logits = model(x)
-                                probs = torch.softmax(logits, dim=1).cpu().numpy()
-                            
+                                probs = torch.softmax(
+                                    logits, dim=1).cpu().numpy()
+
                             # Process results
                             for i, track_id in enumerate(eligible_tracks):
                                 if idx_to_class:
                                     pred_idx = int(np.argmax(probs[i]))
-                                    pred_class = idx_to_class.get(pred_idx, str(pred_idx))
+                                    pred_class = idx_to_class.get(
+                                        pred_idx, str(pred_idx))
                                     pred_conf = float(probs[i, pred_idx])
                                     is_drowning = pred_class.lower().startswith('drowning') and pred_conf > 0.5
-                                    color = (0, 0, 255) if is_drowning else (0, 200, 0)
-                                    track_predictions[track_id] = (pred_class, pred_conf, color)
+                                    color = (0, 0, 255) if is_drowning else (
+                                        0, 200, 0)
+                                    track_predictions[track_id] = (
+                                        pred_class, pred_conf, color)
                                     if is_drowning:
                                         drowning_ids.append(track_id)
                         else:
@@ -636,68 +669,81 @@ def generate_stream(video_source: int | str):
                                 kbuf = track_kbufs[track_id]
                                 cbuf = track_cbufs[track_id]
                                 bbuf = track_bbufs[track_id]
-                                
+
                                 karr = np.stack(list(kbuf), axis=0)
                                 carr = np.stack(list(cbuf), axis=0)
                                 barr = np.stack(list(bbuf), axis=0)
-                                feats = build_features(karr, carr, barr, include_vel=True)
-                                
+                                feats = build_features(
+                                    karr, carr, barr, include_vel=True)
+
                                 if feats.shape[0] < window:
-                                    pad = np.zeros((window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
+                                    pad = np.zeros(
+                                        (window - feats.shape[0], feats.shape[1]), dtype=feats.dtype)
                                     wfeats = np.vstack([feats, pad])
                                 else:
                                     wfeats = feats[-window:]
-                                
-                                x = torch.from_numpy(wfeats[None, ...]).to(DEVICE)
+
+                                x = torch.from_numpy(
+                                    wfeats[None, ...]).to(DEVICE)
                                 if PerfConfig.HALF_PRECISION and DEVICE == "cuda":
                                     x = x.half()
-                                
+
                                 with torch.no_grad():
                                     logits = model(x)
-                                    probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                                
+                                    probs = torch.softmax(
+                                        logits, dim=1).cpu().numpy()[0]
+
                                 if idx_to_class:
                                     pred_idx = int(np.argmax(probs))
-                                    pred_class = idx_to_class.get(pred_idx, str(pred_idx))
+                                    pred_class = idx_to_class.get(
+                                        pred_idx, str(pred_idx))
                                     pred_conf = float(probs[pred_idx])
                                     is_drowning = pred_class.lower().startswith('drowning') and pred_conf > 0.5
-                                    color = (0, 0, 255) if is_drowning else (0, 200, 0)
-                                    track_predictions[track_id] = (pred_class, pred_conf, color)
+                                    color = (0, 0, 255) if is_drowning else (
+                                        0, 200, 0)
+                                    track_predictions[track_id] = (
+                                        pred_class, pred_conf, color)
                                     if is_drowning:
                                         drowning_ids.append(track_id)
-                        
+
                         lstm_inference_count += 1
                         inference_time = (time.time() - inference_start) * 1000
                         total_inference_time_ms += inference_time
-                
+
                 # Draw track IDs and predictions on visualization
                 h, w = vis.shape[:2]
                 if hasattr(result, 'boxes') and result.boxes.id is not None:
                     for box, track_id in zip(result.boxes.xyxy, track_ids):
                         track_id = int(track_id)
                         # Scale box coordinates if input was downscaled
-                        x1, y1, x2, y2 = [int(coord * scale_factor) for coord in box[:4]]
-                        pred_class, pred_conf, color = track_predictions.get(track_id, ("Unknown", 0.5, (0, 255, 255)))
-                        
+                        x1, y1, x2, y2 = [int(coord * scale_factor)
+                                          for coord in box[:4]]
+                        pred_class, pred_conf, color = track_predictions.get(
+                            track_id, ("Unknown", 0.5, (0, 255, 255)))
+
                         label = f"ID:{track_id} {pred_class} ({pred_conf:.2f})"
                         font = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 1
                         thickness = 2
-                        text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
-                        
+                        text_size = cv2.getTextSize(
+                            label, font, font_scale, thickness)[0]
+
                         # Position at top-left of bbox
                         label_x = x1
                         label_y = max(y1 - 5, text_size[1] + 5)
-                        
+
                         # Background rectangle
-                        cv2.rectangle(vis, 
-                                    (label_x - 2, label_y - text_size[1] - 5),
-                                    (label_x + text_size[0] + 5, label_y + 3),
-                                    color, -1)
-                        
+                        cv2.rectangle(vis,
+                                      (label_x - 2, label_y -
+                                       text_size[1] - 5),
+                                      (label_x +
+                                       text_size[0] + 5, label_y + 3),
+                                      color, -1)
+
                         # Text color
-                        cv2.putText(vis, label, (label_x, label_y), font, font_scale, (255, 255, 255), thickness)
-                
+                        cv2.putText(vis, label, (label_x, label_y),
+                                    font, font_scale, (255, 255, 255), thickness)
+
                 # Memory cleanup - remove old tracks
                 if frame_count % PerfConfig.TRACK_CLEANUP_INTERVAL == 0:
                     stale_tracks = [
@@ -715,13 +761,15 @@ def generate_stream(video_source: int | str):
             if PerfConfig.OUTPUT_SCALE < 1.0:
                 out_w = int(vis.shape[1] * PerfConfig.OUTPUT_SCALE)
                 out_h = int(vis.shape[0] * PerfConfig.OUTPUT_SCALE)
-                vis = cv2.resize(vis, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                vis = cv2.resize(vis, (out_w, out_h),
+                                 interpolation=cv2.INTER_LINEAR)
 
             # Update statistics periodically
             if frame_count % fps_update_interval == 0:
                 elapsed = time.time() - start_time
                 current_fps = frame_count / elapsed if elapsed > 0 else 0.0
-                avg_inference_ms = total_inference_time_ms / max(1, lstm_inference_count)
+                avg_inference_ms = total_inference_time_ms / \
+                    max(1, lstm_inference_count)
                 update_stats(
                     fps=current_fps,
                     frame_count=frame_count,
@@ -739,11 +787,11 @@ def generate_stream(video_source: int | str):
             ret, buf = cv2.imencode('.jpg', vis, encode_params)
             if not ret:
                 continue
-            
+
             # Cache for skipped frames
             last_vis = vis
             last_vis_bytes = buf.tobytes()
-            
+
             yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + last_vis_bytes + b"\r\n")
 
     finally:
@@ -752,8 +800,8 @@ def generate_stream(video_source: int | str):
 
 @app.get("/video_feed")
 def video_feed():
-    # source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.mp4")
-    source = 0
+    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.mp4")
+    # source = 0
     try:
         source_val = int(source)
     except ValueError:
