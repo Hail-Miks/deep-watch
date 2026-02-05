@@ -23,6 +23,7 @@ from deep_watch import PoseDetector  # noqa: E402
 # PERFORMANCE CONFIGURATION - Tune these for edge devices / lower-end laptops
 # ============================================================================
 #
+
 # PRESETS: Uncomment ONE preset below, or customize individual settings
 #
 # ---------- PRESET: HIGH PERFORMANCE (powerful GPU/desktop) ----------
@@ -258,6 +259,38 @@ def get_stats():
         return stats
 
 
+# Live statistics (thread-safe)
+_stats_lock = threading.Lock()
+_live_stats = {
+    "fps": 0.0,
+    "frame_count": 0,
+    "processed_frames": 0,
+    "skipped_frames": 0,
+    "people_tracked": 0,
+    "active_tracks": 0,
+    "drowning_alerts": 0,
+    "drowning_track_ids": [],
+    "start_time": None,
+    "uptime_seconds": 0,
+    "model_loaded": False,
+    "camera_connected": False,
+    "lstm_inferences": 0,
+    "avg_inference_ms": 0.0,
+}
+
+def update_stats(**kwargs):
+    with _stats_lock:
+        _live_stats.update(kwargs)
+        if _live_stats["start_time"] is not None:
+            _live_stats["uptime_seconds"] = time.time() - _live_stats["start_time"]
+
+def get_stats():
+    with _stats_lock:
+        stats = _live_stats.copy()
+        if stats["start_time"] is not None:
+            stats["uptime_seconds"] = time.time() - stats["start_time"]
+        return stats
+
 _ckpt = None
 _model = None
 _class_to_idx = None
@@ -465,6 +498,8 @@ def generate_stream(video_source: int | str):
                 yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
         yield from gen_error()
         return
+    
+    update_stats(camera_connected=True)
 
     update_stats(camera_connected=True)
 
