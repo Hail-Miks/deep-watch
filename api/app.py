@@ -5,7 +5,7 @@ import tempfile
 import time
 from typing import Dict, List, Tuple
 
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template, Response, send_file
 import numpy as np
 import torch
 import cv2
@@ -17,7 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from deep_watch import PoseDetector  # noqa: E402
-
+from deep_watch.database import get_incident_logger
 
 # ============================================================================
 # PERFORMANCE CONFIGURATION - Tune these for edge devices / lower-end laptops
@@ -54,6 +54,7 @@ from deep_watch import PoseDetector  # noqa: E402
 # JPEG_QUALITY = 60
 #
 # ============================================================================
+
 
 class PerfConfig:
     """
@@ -437,6 +438,22 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/incidents_view")
+def incidents_view():
+    return render_template("incidents.html")
+
+
+@app.get("/incidents")
+def incidents():
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        limit = 200
+
+    incident_logger = get_incident_logger()
+    return jsonify(incident_logger.get_all_incidents(limit=limit))
+
+
 def generate_stream(video_source: int | str):
     """Optimized video stream generator with performance controls."""
     model_loaded = False
@@ -709,7 +726,20 @@ def generate_stream(video_source: int | str):
                         lstm_inference_count += 1
                         inference_time = (time.time() - inference_start) * 1000
                         total_inference_time_ms += inference_time
-
+                
+                # Log drowning incidents with cooldown
+                if drowning_ids:
+                    now = time.time()
+                    if not hasattr(generate_stream, 'last_log_time'):
+                        generate_stream.last_log_time = 0.0
+                    if now - generate_stream.last_log_time >= 5.0:
+                        incident_logger = get_incident_logger()
+                        incident_logger.log_incident(
+                            track_ids=list(drowning_ids),
+                            description="Drowning Detected",
+                        )
+                        generate_stream.last_log_time = now
+                        
                 # Draw track IDs and predictions on visualization
                 h, w = vis.shape[:2]
                 if hasattr(result, 'boxes') and result.boxes.id is not None:
