@@ -235,7 +235,7 @@ def build_clipwise_split(items: List[Dict], val_ratio: float = 0.2, seed: int = 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data-root", default=os.path.join("dataset", "keypoints"))
-    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--window", type=int, default=90)
