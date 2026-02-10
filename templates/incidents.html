@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Watch - Logs</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <h1>Deep Watch</h1>
+        <nav class="header-nav">
+          <a href="/" class="nav-link">Live</a>
+          <a href="/incidents_view" class="nav-link active">Logs</a>
+        </nav>
+      </div>
+      <div class="status" id="statusText">Incidents Log</div>
+    </header>
+
+    <main class="incidents-page">
+      <section class="panel">
+        <div class="panel-header">Incident Logs</div>
+        <div class="panel-body">
+          <div class="incidents-toolbar">
+            <div class="toolbar-left">
+              <span class="toolbar-label">Total Incidents:</span>
+              <span class="toolbar-value" id="incidentCount">0</span>
+            </div>
+            <button id="refreshIncidents" class="btn">Refresh</button>
+          </div>
+
+          <div class="incidents-table" id="incidentsTable">
+            <div class="table-header">
+              <div>ID</div>
+              <div>Timestamp</div>
+              <div>Track IDs</div>
+              <div>Description</div>
+            </div>
+            <div class="table-body" id="incidentsBody">
+              <div class="empty-row">Loading incidents…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>© Deep Watch</div>
+    </footer>
+
+    <script>
+      async function loadIncidents() {
+        const body = document.getElementById("incidentsBody");
+        const countEl = document.getElementById("incidentCount");
+        body.innerHTML = "<div class=\"empty-row\">Loading incidents…</div>";
+
+        try {
+          const res = await fetch("/incidents?limit=200");
+          const incidents = await res.json();
+
+          countEl.textContent = incidents.length;
+
+          if (!incidents.length) {
+            body.innerHTML = "<div class=\"empty-row\">No incidents recorded.</div>";
+            return;
+          }
+
+          body.innerHTML = incidents
+            .map((incident) => {
+              const ts = incident.timestamp
+                ? new Date(incident.timestamp).toLocaleString()
+                : "—";
+
+              const trackIds = incident.track_ids || "—";
+
+
+              return `
+                <div class=\"table-row\">
+                  <div>${incident.id}</div>
+                  <div>${ts}</div>
+                  <div>${trackIds}</div>
+                  <div>${incident.description || "—"}</div>
+                </div>
+              `;
+            })
+            .join("");
+        } catch (e) {
+          body.innerHTML = "<div class=\"empty-row\">Failed to load incidents.</div>";
+          console.error("Failed to load incidents:", e);
+        }
+      }
+
+      document.getElementById("refreshIncidents").addEventListener("click", loadIncidents);
+
+      loadIncidents();
+    </script>
+  </body>
+</html>
