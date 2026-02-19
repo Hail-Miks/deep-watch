@@ -30,7 +30,7 @@ def extract_frames_from_video(video_file_path: str, output_dir: str) -> None:
 
 def main():
     dataset_dir = os.path.dirname(__file__)
-    source_dir = os.path.join(dataset_dir, "not_drowning")
+    source_dir = os.path.join(dataset_dir, "drowning")
 
     if not os.path.isdir(source_dir):
         print(f"Error: Source directory does not exist: {source_dir}")

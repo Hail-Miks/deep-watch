@@ -1,0 +1,27 @@
+{
+  "clip": "clip_14",
+  "class": "drowning",
+  "source_path": "c:\\Users\\mikha\\Desktop\\Mik\\deep-watch\\dataset\\drowning\\clip_14",
+  "mode": "frames",
+  "fps": 30.0,
+  "num_frames": 309,
+  "keypoints": [
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle"
+  ]
+}

@@ -149,6 +149,7 @@ def find_mp4s_or_frame_dirs(source_dir: str) -> List[Tuple[str, str, str]]:
 def main():
     parser = argparse.ArgumentParser(description="Extract YOLOv8 pose keypoints sequences.")
     parser.add_argument("--dataset-root", default=os.path.dirname(__file__), help="Path to dataset folder (default: dataset)")
+    # parser.add_argument("--classes", nargs="*", default=["not_drowning", "drowning"], help="Subfolders to scan under dataset-root")
     parser.add_argument("--classes", nargs="*", default=["not_drowning", "drowning"], help="Subfolders to scan under dataset-root")
     parser.add_argument("--output-root", default=None, help="Where to save .npz files (default: <dataset-root>/keypoints)")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Inference device")
