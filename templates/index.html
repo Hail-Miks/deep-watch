@@ -82,11 +82,11 @@
               <span class="stat-label">Frames Skipped:</span>
               <span class="stat-value" id="skippedFrames">0</span>
             </div>
-            <div class="stat-row">
+            <div class="stat-row" id="lstmInferencesRow">
               <span class="stat-label">LSTM Inferences:</span>
               <span class="stat-value" id="lstmInferences">0</span>
             </div>
-            <div class="stat-row">
+            <div class="stat-row" id="avgInferenceRow">
               <span class="stat-label">Avg Inference:</span>
               <span class="stat-value"><span id="avgInference">0</span> ms</span>
             </div>
@@ -102,7 +102,7 @@
               <span class="stat-label">Camera:</span>
               <span class="stat-value" id="cameraStatus">—</span>
             </div>
-            <div class="stat-row">
+            <div class="stat-row" id="modelRow">
               <span class="stat-label">Model:</span>
               <span class="stat-value" id="modelStatus">—</span>
             </div>
@@ -207,6 +207,8 @@
           document.getElementById("activeTracks").textContent = data.active_tracks || 0;
           document.getElementById("peopleTracked").textContent = data.people_tracked || 0;
           
+          const isAboveWater = data.scene_mode === "abovewater";
+
           const alertCount = data.drowning_alerts || 0;
           const alertEl = document.getElementById("drowningAlerts");
           const alertRow = document.getElementById("alertRow");
@@ -214,24 +216,34 @@
           const videoContainer = document.getElementById("videoContainer");
           const drowningAlert = document.getElementById("drowningAlert");
           const toggleSirenBtn = document.getElementById("toggleSirenBtn");
-          
-          alertEl.textContent = alertCount;
-          if (alertCount > 0) {
-            alertRow.classList.add("active-alert");
-            alertIds.textContent = `Track IDs: ${data.drowning_track_ids.join(", ")}`;
-            alertIds.style.display = "block";
-            drowningAlert.style.display = "flex";
-            toggleSirenBtn.style.display = "block";
-            startSiren();
-          } else {
-            alertRow.classList.remove("active-alert");
+
+          // Hide all drowning UI elements in above-water mode
+          if (isAboveWater) {
+            alertRow.style.display = "none";
             alertIds.style.display = "none";
             drowningAlert.style.display = "none";
             toggleSirenBtn.style.display = "none";
             stopSiren();
-            sirenSilenced = false;
-            const btn = document.getElementById("toggleSirenBtn");
-            btn.textContent = "Mute Siren";
+          } else {
+            alertRow.style.display = "";
+            alertEl.textContent = alertCount;
+            if (alertCount > 0) {
+              alertRow.classList.add("active-alert");
+              alertIds.textContent = `Track IDs: ${data.drowning_track_ids.join(", ")}`;
+              alertIds.style.display = "block";
+              drowningAlert.style.display = "flex";
+              toggleSirenBtn.style.display = "block";
+              startSiren();
+            } else {
+              alertRow.classList.remove("active-alert");
+              alertIds.style.display = "none";
+              drowningAlert.style.display = "none";
+              toggleSirenBtn.style.display = "none";
+              stopSiren();
+              sirenSilenced = false;
+              const btn = document.getElementById("toggleSirenBtn");
+              btn.textContent = "Mute Siren";
+            }
           }
           
           // Performance stats
@@ -250,8 +262,21 @@
           cameraEl.textContent = data.camera_connected ? "Connected" : "Disconnected";
           cameraEl.className = "stat-value " + (data.camera_connected ? "status-ok" : "status-error");
           
-          modelEl.textContent = data.model_loaded ? "Loaded" : "Not Loaded";
-          modelEl.className = "stat-value " + (data.model_loaded ? "status-ok" : "status-warning");
+          // Hide LSTM-related stats in above-water mode
+          const lstmRow = document.getElementById("lstmInferencesRow");
+          const avgRow = document.getElementById("avgInferenceRow");
+          const modelRowEl = document.getElementById("modelRow");
+          if (isAboveWater) {
+            if (lstmRow) lstmRow.style.display = "none";
+            if (avgRow) avgRow.style.display = "none";
+            if (modelRowEl) modelRowEl.style.display = "none";
+          } else {
+            if (lstmRow) lstmRow.style.display = "";
+            if (avgRow) avgRow.style.display = "";
+            if (modelRowEl) modelRowEl.style.display = "";
+            modelEl.textContent = data.model_loaded ? "Loaded" : "Not Loaded";
+            modelEl.className = "stat-value " + (data.model_loaded ? "status-ok" : "status-warning");
+          }
           
         } catch (e) {
           console.error("Failed to fetch stats:", e);

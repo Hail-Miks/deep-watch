@@ -224,6 +224,61 @@ if not os.path.isfile(CKPT_PATH):
     print(
         f"Warning: LSTM checkpoint not found at {CKPT_PATH}. Inference will fail until provided.")
 
+
+# ============================================================================
+# SCENE CLASSIFICATION
+# ============================================================================
+
+def classify_scene(video_source, num_frames: int = 30,
+                   blue_green_threshold: float = 0.35) -> str:
+    """
+    basically classifies whether the video feed is underwater or above-water.
+
+    checks the SCENE_TYPE env var first.
+    if SCENE_type is unset or "" then we proceed to analyze the first `num_frames` 
+    frames for blue-green color dominance using HSV color space.
+
+    returns "underwater" or "abovewater".
+    """
+    # Manual override just type in here     ↓↓  ("underwater" or "abovewater"), if its blank then it is unset by default
+    override = os.environ.get("SCENE_TYPE", "").strip().lower()
+    if override in ("underwater", "abovewater"):
+        return override
+
+    #Auto-detecting scene from first {num_frames} frames" (oNly happens if the SCENE_TYPE env var is not set to "underwater" or "abovewater")
+    cap = cv2.VideoCapture(video_source)
+    if not cap.isOpened():
+        return "underwater" # if there is not source camera input, we default to underwater
+
+    # calculate each frame's blue-green ratio to classify whether underwater or above water
+    blue_green_ratios = []
+    frames_read = 0
+    for _ in range(num_frames):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames_read += 1
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        h, s, _v = cv2.split(hsv)
+        # blue-green hue range (80-140)
+        # saturation (>40) to ignore gray/white areas
+        # can edit thes thresholds
+        mask = (h >= 80) & (h <= 140) & (s > 40)
+        ratio = float(np.count_nonzero(mask)) / max(1, mask.size)
+        blue_green_ratios.append(ratio)
+
+    cap.release()
+
+    # just incase for some reason no frames are read, we default to underwater to be safe
+    if frames_read == 0:
+        return "underwater"
+
+    avg_ratio = float(np.mean(blue_green_ratios))
+    scene = "underwater" if avg_ratio >= blue_green_threshold else "abovewater"
+    print(f"[SceneMode] Blue-green ratio: {avg_ratio:.3f} (threshold: {blue_green_threshold}) -> {scene}")
+    return scene
+
+
 # Live statistics (thread-safe)
 _stats_lock = threading.Lock()
 _live_stats = {
@@ -241,6 +296,7 @@ _live_stats = {
     "camera_connected": False,
     "lstm_inferences": 0,
     "avg_inference_ms": 0.0,
+    "scene_mode": "unknown",
 }
 
 
@@ -277,6 +333,7 @@ _live_stats = {
     "camera_connected": False,
     "lstm_inferences": 0,
     "avg_inference_ms": 0.0,
+    "scene_mode": "unknown",
 }
 
 def update_stats(**kwargs):
@@ -387,6 +444,7 @@ def stats():
         "camera_connected": s["camera_connected"],
         "lstm_inferences": s.get("lstm_inferences", 0),
         "avg_inference_ms": round(s.get("avg_inference_ms", 0), 1),
+        "scene_mode": s.get("scene_mode", "unknown"),
     })
 
 
@@ -402,6 +460,7 @@ def get_config():
         "yolo_imgsz": PerfConfig.YOLO_IMGSZ,
         "half_precision": PerfConfig.HALF_PRECISION,
         "device": DEVICE,
+        "scene_mode": _live_stats.get("scene_mode", "unknown"),
     })
 
 
@@ -489,15 +548,24 @@ def incidents():
 
 def generate_stream(video_source: int | str):
     """Optimized video stream generator with performance controls."""
+    # classify scene on startup (underwater vs abovewater)
+    scene_mode = classify_scene(video_source)
+    update_stats(scene_mode=scene_mode)
+
     model_loaded = False
-    try:
-        model, class_to_idx, window = load_lstm()
-        model_loaded = True
-        # Enable half precision if configured and on CUDA
-        if PerfConfig.HALF_PRECISION and DEVICE == "cuda":
-            model = model.half()
-    except Exception:
+    if scene_mode == "underwater":
+        try:
+            model, class_to_idx, window = load_lstm()
+            model_loaded = True
+            # Enable half precision if configured and on CUDA
+            if PerfConfig.HALF_PRECISION and DEVICE == "cuda":
+                model = model.half()
+        except Exception:
+            model, class_to_idx, window = None, None, 60
+    else:
+        # Above-water mode: skip LSTM entirely
         model, class_to_idx, window = None, None, 60
+        print("[SceneMode] Above-water — LSTM classification disabled")
 
     update_stats(model_loaded=model_loaded, start_time=time.time())
 
@@ -650,9 +718,10 @@ def generate_stream(video_source: int | str):
                     track_cbufs[track_id].append(c)
                     track_bbufs[track_id].append(bb)
 
-                # LSTM inference - throttled and batched
+                # LSTM inference - throttled and batched (underwater mode only)
                 drowning_ids = []
                 should_run_lstm = (
+                    scene_mode == "underwater" and
                     model is not None and
                     processed_frame_count % PerfConfig.LSTM_INFERENCE_INTERVAL == 0
                 )
@@ -762,8 +831,8 @@ def generate_stream(video_source: int | str):
                         inference_time = (time.time() - inference_start) * 1000
                         total_inference_time_ms += inference_time
                 
-                # Log drowning incidents with cooldown
-                if drowning_ids:
+                # Log drowning incidents with cooldown (underwater mode only)
+                if drowning_ids and scene_mode == "underwater":
                     now = time.time()
                     if not hasattr(generate_stream, 'last_log_time'):
                         generate_stream.last_log_time = 0.0
@@ -786,7 +855,12 @@ def generate_stream(video_source: int | str):
                         pred_class, pred_conf, color = track_predictions.get(
                             track_id, ("Unknown", 0.5, (0, 255, 255)))
 
-                        label = f"ID:{track_id} {pred_class} ({pred_conf:.2f})"
+                        # Above-water mode: show track ID only, no classification OR LSTMM
+                        if scene_mode == "abovewater":
+                            label = f"ID:{track_id}"
+                            color = (0, 255, 255)  # Neutral yellow
+                        else:
+                            label = f"ID:{track_id} {pred_class} ({pred_conf:.2f})"
                         font = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 1
                         thickness = 2
@@ -865,8 +939,8 @@ def generate_stream(video_source: int | str):
 
 @app.get("/video_feed")
 def video_feed():
-    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.mp4")
-    # source = 0
+    #source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.mp4")
+    source = 0
     try:
         source_val = int(source)
     except ValueError:
