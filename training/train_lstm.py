@@ -8,6 +8,9 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, random_split
 
+# COCO left/right keypoint swap indices for mirror augmentation
+COCO_MIRROR_IDX = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+
 
 def load_npz_sequences(data_root: str) -> List[Dict]:
     """Load all .npz under data_root/<class>/*.npz
@@ -111,11 +114,12 @@ def normalize_keypoints(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray) ->
     return out
 
 
-def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include_vel: bool = True) -> np.ndarray:
+def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include_vel: bool = True, include_conf: bool = True) -> np.ndarray:
     """Create per-frame feature vectors.
-    - Normalize positions
-    - Optionally append velocities (first difference)
-    Returns array of shape (T, F)
+    - Normalize positions (34D)
+    - Optionally append velocities (34D)
+    - Optionally append keypoint confidence scores (17D)
+    Returns array of shape (T, F)  where F = 34 + 34 + 17 = 85 by default
     """
     kpts_filled = forward_fill_nan(kpts)
     conf_filled = forward_fill_nan(conf[:, :, None])[:, :, 0] if conf is not None else None
@@ -124,18 +128,21 @@ def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include
     kpts_norm = normalize_keypoints(kpts_filled, conf_filled, bbox_filled)
     pos = kpts_norm.reshape(kpts_norm.shape[0], -1)  # (T, 34)
 
+    parts = [pos]
     if include_vel:
         vel = np.vstack([np.zeros_like(pos[:1]), np.diff(pos, axis=0)])
-        feats = np.concatenate([pos, vel], axis=1)
-    else:
-        feats = pos
+        parts.append(vel)
+    if include_conf and conf_filled is not None:
+        parts.append(conf_filled)  # (T, 17) — keypoint detection confidence
+    feats = np.concatenate(parts, axis=1)
     return feats.astype(np.float32)
 
 
 class WindowedKeypointDataset(Dataset):
-    def __init__(self, items: List[Dict], class_to_idx: Dict[str, int], window: int = 60, stride: int = 30, include_vel: bool = True):
+    def __init__(self, items: List[Dict], class_to_idx: Dict[str, int], window: int = 60, stride: int = 30, include_vel: bool = True, augment: bool = False):
         self.samples: List[Tuple[np.ndarray, int]] = []
         self.num_features = None
+        self.augment = augment
         for it in items:
             kpts = it["kpts"]
             conf = it["conf"]
@@ -161,21 +168,44 @@ class WindowedKeypointDataset(Dataset):
 
     def __getitem__(self, idx):
         x, y = self.samples[idx]
-        # return as torch tensors (T, F)
+        if self.augment:
+            x = x.copy()
+            # Random Gaussian noise on features
+            if np.random.rand() < 0.5:
+                x += np.random.randn(*x.shape).astype(np.float32) * 0.02
+            # Random mirror flip (swap left/right COCO keypoints, negate x)
+            if np.random.rand() < 0.5:
+                flat_pair = []
+                for ki in COCO_MIRROR_IDX:
+                    flat_pair.extend([2 * ki, 2 * ki + 1])
+                # Swap + negate positions (cols 0:34)
+                x[:, :34] = x[:, flat_pair]
+                x[:, 0:34:2] *= -1
+                # Swap + negate velocities (cols 34:68)
+                if x.shape[1] >= 68:
+                    x[:, 34:68] = x[:, [i + 34 for i in flat_pair]]
+                    x[:, 34:68:2] *= -1
+                # Swap confidences (cols 68:85) — no sign change
+                if x.shape[1] >= 85:
+                    x[:, 68:85] = x[:, [COCO_MIRROR_IDX[i] + 68 for i in range(17)]]
+            # Random scale jitter
+            if np.random.rand() < 0.5:
+                x *= np.random.uniform(0.85, 1.15)
         return torch.from_numpy(x), torch.tensor(y, dtype=torch.long)
 
 
 class LSTMClassifier(nn.Module):
     def __init__(self, input_size: int, hidden_size: int = 128, num_layers: int = 1, num_classes: int = 2, dropout: float = 0.1):
         super().__init__()
-        # Dropout is ignored by PyTorch when num_layers == 1; we keep parameter for flexibility
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+        self.drop = nn.Dropout(dropout)  # applied after LSTM — works even with 1 layer
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):  # x: (B, T, F)
-        out, _ = self.lstm(x)
-        last = out[:, -1, :]
-        logits = self.fc(last)
+        out, _ = self.lstm(x)  # (B, T, H)
+        pooled = out.mean(dim=1)  # average over all time steps (better than last-only)
+        pooled = self.drop(pooled)
+        logits = self.fc(pooled)
         return logits
 
 
@@ -235,15 +265,18 @@ def build_clipwise_split(items: List[Dict], val_ratio: float = 0.2, seed: int = 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data-root", default=os.path.join("dataset", "keypoints"))
-    p.add_argument("--epochs", type=int, default=50)
+    p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--window", type=int, default=90)
     p.add_argument("--stride", type=int, default=30)
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--layers", type=int, default=1)
-    p.add_argument("--dropout", type=float, default=0.2, help="Dropout for LSTM (ignored when layers=1)")
+    p.add_argument("--dropout", type=float, default=0.3, help="Dropout between LSTM and FC layer")
+    p.add_argument("--weight-decay", type=float, default=1e-4, help="L2 regularization")
     p.add_argument("--class-weights", default="auto", choices=["none", "auto"], help="Use class weights in loss (auto = inverse frequency)")
+    p.add_argument("--label-smoothing", type=float, default=0.1, help="Label smoothing (reduces overconfidence, helps false positives)")
+    p.add_argument("--patience", type=int, default=20, help="Early stopping patience (epochs without val improvement)")
     p.add_argument("--val-ratio", type=float, default=0.2)
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     args = p.parse_args()
@@ -259,8 +292,8 @@ def main():
     print(f"Classes: {class_to_idx}")
 
     train_items, val_items = build_clipwise_split(items, val_ratio=args.val_ratio)
-    train_ds = WindowedKeypointDataset(train_items, class_to_idx, window=args.window, stride=args.stride, include_vel=True)
-    val_ds = WindowedKeypointDataset(val_items, class_to_idx, window=args.window, stride=args.stride, include_vel=True)
+    train_ds = WindowedKeypointDataset(train_items, class_to_idx, window=args.window, stride=args.stride, include_vel=True, augment=True)
+    val_ds = WindowedKeypointDataset(val_items, class_to_idx, window=args.window, stride=args.stride, include_vel=True, augment=False)
 
     input_size = train_ds.num_features
     print(f"Feature size: {input_size}, Train windows: {len(train_ds)}, Val windows: {len(val_ds)}")
@@ -281,20 +314,25 @@ def main():
             cnt = max(1, counts[c])
             weights.append(total / cnt)
         weight_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
-        criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+        criterion = nn.CrossEntropyLoss(weight=weight_tensor, label_smoothing=args.label_smoothing)
         print(f"Class weights: {weights}")
     else:
-        criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='max', factor=0.5, patience=10)
 
     best_val_acc = 0.0
+    no_improve = 0
     os.makedirs(os.path.join("runs", "lstm"), exist_ok=True)
     for epoch in range(1, args.epochs + 1):
         tr_loss, tr_acc = train_one_epoch(model, train_loader, device, optimizer, criterion)
         va_loss, va_acc = eval_model(model, val_loader, device, criterion)
-        print(f"Epoch {epoch}: train loss {tr_loss:.4f} acc {tr_acc:.3f} | val loss {va_loss:.4f} acc {va_acc:.3f}")
+        lr_now = optimizer.param_groups[0]['lr']
+        print(f"Epoch {epoch}: train loss {tr_loss:.4f} acc {tr_acc:.3f} | val loss {va_loss:.4f} acc {va_acc:.3f} | lr {lr_now:.1e}")
         if va_acc > best_val_acc:
             best_val_acc = va_acc
+            no_improve = 0
             ckpt = {
                 "model_state": model.state_dict(),
                 "input_size": input_size,
@@ -305,6 +343,12 @@ def main():
             }
             torch.save(ckpt, os.path.join("runs", "lstm", "best.pt"))
             print(f"Saved new best checkpoint (acc {best_val_acc:.3f})")
+        else:
+            no_improve += 1
+            if no_improve >= args.patience:
+                print(f"Early stopping at epoch {epoch} (no improvement for {args.patience} epochs)")
+                break
+        scheduler.step(va_acc)
 
 
 if __name__ == "__main__":

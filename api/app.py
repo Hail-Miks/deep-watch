@@ -96,6 +96,10 @@ class PerfConfig:
     YOLO_IMGSZ: int = 640
     # True=FP16 on CUDA (faster but less accurate)
     HALF_PRECISION: bool = False
+    # Minimum confidence to classify as drowning (higher = fewer false positives)
+    DROWNING_CONF_THRESHOLD: float = 0.75
+    # Require N consecutive drowning predictions before alerting
+    DROWNING_SMOOTHING_FRAMES: int = 3
 
     # ==================== END CONFIGURATION ====================
 
@@ -169,18 +173,20 @@ def normalize_keypoints(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray) ->
     return out
 
 
-def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include_vel: bool = True) -> np.ndarray:
+def build_features(kpts: np.ndarray, conf: np.ndarray, bbox: np.ndarray, include_vel: bool = True, include_conf: bool = True) -> np.ndarray:
     kpts_filled = forward_fill_nan(kpts)
     conf_filled = forward_fill_nan(conf[:, :, None])[
         :, :, 0] if conf is not None else None
     bbox_filled = forward_fill_nan(bbox)
     kpts_norm = normalize_keypoints(kpts_filled, conf_filled, bbox_filled)
     pos = kpts_norm.reshape(kpts_norm.shape[0], -1)  # (T, 34)
+    parts = [pos]
     if include_vel:
         vel = np.vstack([np.zeros_like(pos[:1]), np.diff(pos, axis=0)])
-        feats = np.concatenate([pos, vel], axis=1)
-    else:
-        feats = pos
+        parts.append(vel)
+    if include_conf and conf_filled is not None:
+        parts.append(conf_filled)  # (T, 17) — keypoint detection confidence
+    feats = np.concatenate(parts, axis=1)
     return feats.astype(np.float32)
 
 
@@ -596,6 +602,8 @@ def generate_stream(video_source: int | str):
     track_bbufs = {}  # track_id -> deque of bboxes
     track_predictions = {}  # track_id -> (pred_class, confidence, color)
     track_last_seen = {}  # track_id -> frame number when last seen
+    track_alert_bufs = {}  # track_id -> deque of recent drowning flags
+    drowning_incident_times = {}  # track_id -> timestamp of last drowning detection (persists through occlusion)
 
     idx_to_class = None
     if class_to_idx:
@@ -617,6 +625,7 @@ def generate_stream(video_source: int | str):
     last_vis = None
     last_vis_bytes = None
     drowning_ids = []
+    active_drowning_ids = set()  # Persists across frames for occlusion handling
     people = []
 
     try:
@@ -693,6 +702,8 @@ def generate_stream(video_source: int | str):
                         track_bbufs[track_id] = deque(maxlen=window)
                         track_predictions[track_id] = (
                             "Unknown", 0.5, (0, 255, 255))
+                        track_alert_bufs[track_id] = deque(
+                            maxlen=PerfConfig.DROWNING_SMOOTHING_FRAMES)
 
                     track_last_seen[track_id] = frame_count
 
@@ -777,13 +788,21 @@ def generate_stream(video_source: int | str):
                                     pred_class = idx_to_class.get(
                                         pred_idx, str(pred_idx))
                                     pred_conf = float(probs[i, pred_idx])
-                                    is_drowning = pred_class.lower().startswith('drowning') and pred_conf > 0.5
+                                    raw_drowning = pred_class.lower().startswith('drowning') and pred_conf > PerfConfig.DROWNING_CONF_THRESHOLD
+                                    if PerfConfig.DROWNING_SMOOTHING_FRAMES <= 1:
+                                        is_drowning = raw_drowning
+                                    else:
+                                        buf = track_alert_bufs.setdefault(
+                                            track_id, deque(maxlen=PerfConfig.DROWNING_SMOOTHING_FRAMES))
+                                        buf.append(raw_drowning)
+                                        is_drowning = len(buf) == buf.maxlen and all(buf)
                                     color = (0, 0, 255) if is_drowning else (
                                         0, 200, 0)
                                     track_predictions[track_id] = (
                                         pred_class, pred_conf, color)
                                     if is_drowning:
                                         drowning_ids.append(track_id)
+                                        drowning_incident_times[track_id] = time.time()
                         else:
                             # Single track inference (or batch disabled)
                             for track_id in eligible_tracks:
@@ -819,27 +838,67 @@ def generate_stream(video_source: int | str):
                                     pred_class = idx_to_class.get(
                                         pred_idx, str(pred_idx))
                                     pred_conf = float(probs[pred_idx])
-                                    is_drowning = pred_class.lower().startswith('drowning') and pred_conf > 0.5
+                                    raw_drowning = pred_class.lower().startswith('drowning') and pred_conf > PerfConfig.DROWNING_CONF_THRESHOLD
+                                    if PerfConfig.DROWNING_SMOOTHING_FRAMES <= 1:
+                                        is_drowning = raw_drowning
+                                    else:
+                                        buf = track_alert_bufs.setdefault(
+                                            track_id, deque(maxlen=PerfConfig.DROWNING_SMOOTHING_FRAMES))
+                                        buf.append(raw_drowning)
+                                        is_drowning = len(buf) == buf.maxlen and all(buf)
                                     color = (0, 0, 255) if is_drowning else (
                                         0, 200, 0)
                                     track_predictions[track_id] = (
                                         pred_class, pred_conf, color)
                                     if is_drowning:
                                         drowning_ids.append(track_id)
+                                        drowning_incident_times[track_id] = time.time()
 
                         lstm_inference_count += 1
                         inference_time = (time.time() - inference_start) * 1000
                         total_inference_time_ms += inference_time
                 
+                # Clean up dead tracks (not seen for > 30 frames)
+                # This prevents stale drowning predictions from triggering alerts after occlusion
+                dead_track_ids = [
+                    tid for tid in track_last_seen
+                    if (frame_count - track_last_seen[tid]) > 30
+                ]
+                for tid in dead_track_ids:
+                    # Reset drowning state so ghost alerts don't fire
+                    track_predictions[tid] = ("Unknown", 0.5, (0, 255, 255))
+                    track_alert_bufs[tid].clear()
+                    # Clean up the oldest buffers if memory grows too large
+                    if len(track_kbufs) > 50:
+                        del track_kbufs[tid]
+                        del track_cbufs[tid]
+                        del track_bbufs[tid]
+                        del track_last_seen[tid]
+                
                 # Log drowning incidents with cooldown (underwater mode only)
-                if drowning_ids and scene_mode == "underwater":
-                    now = time.time()
+                # Alert persists through brief occlusions for up to 5 seconds
+                now = time.time()
+                active_drowning_ids = set(drowning_ids)  # Currently visible drowning
+                # Add recently drowning tracks (< 5 sec ago) even if occluded
+                recent_drowning_ids = [
+                    tid for tid, t in drowning_incident_times.items()
+                    if (now - t) < 5.0
+                ]
+                active_drowning_ids.update(recent_drowning_ids)
+                
+                # Clean up old incidents
+                drowning_incident_times = {
+                    tid: t for tid, t in drowning_incident_times.items()
+                    if (now - t) < 5.0
+                }
+                
+                if active_drowning_ids and scene_mode == "underwater":
                     if not hasattr(generate_stream, 'last_log_time'):
                         generate_stream.last_log_time = 0.0
                     if now - generate_stream.last_log_time >= 5.0:
                         incident_logger = get_incident_logger()
                         incident_logger.log_incident(
-                            track_ids=list(drowning_ids),
+                            track_ids=list(active_drowning_ids),
                             description="Drowning Detected",
                         )
                         generate_stream.last_log_time = now
@@ -895,6 +954,8 @@ def generate_stream(video_source: int | str):
                         track_bbufs.pop(tid, None)
                         track_predictions.pop(tid, None)
                         track_last_seen.pop(tid, None)
+                        track_alert_bufs.pop(tid, None)
+                        drowning_incident_times.pop(tid, None)
 
             # Downscale output if configured
             if PerfConfig.OUTPUT_SCALE < 1.0:
@@ -916,8 +977,8 @@ def generate_stream(video_source: int | str):
                     skipped_frames=skipped_frames,
                     people_tracked=len(track_kbufs),
                     active_tracks=len(people) if results else 0,
-                    drowning_alerts=len(drowning_ids),
-                    drowning_track_ids=drowning_ids,
+                    drowning_alerts=len(active_drowning_ids),
+                    drowning_track_ids=list(active_drowning_ids),
                     lstm_inferences=lstm_inference_count,
                     avg_inference_ms=avg_inference_ms,
                 )
@@ -939,7 +1000,7 @@ def generate_stream(video_source: int | str):
 
 @app.get("/video_feed")
 def video_feed():
-    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample.avi")
+    source = os.environ.get("VIDEO_SOURCE", "dataset/drowning_sample2.avi")
     # source = 0
     try:
         source_val = int(source)

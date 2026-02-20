@@ -37,8 +37,10 @@ ENV/
 *.pth
 *.onnx
 *.weights
-data/
-datasets/
+dataset/
+drowning/
+not_drowning/
+keypoints/
 models/weights/
 
 # Output
@@ -52,3 +54,5 @@ Thumbs.db
 
 # Logs
 *.log
+/dataset
+*.jpg

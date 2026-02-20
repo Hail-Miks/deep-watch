@@ -4,7 +4,7 @@
   "source_path": "c:\\Users\\mikha\\Desktop\\Mik\\deep-watch\\dataset\\drowning\\clip_10",
   "mode": "frames",
   "fps": 30.0,
-  "num_frames": 151,
+  "num_frames": 120,
   "keypoints": [
     "nose",
     "left_eye",

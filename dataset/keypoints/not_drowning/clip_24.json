@@ -1,10 +1,10 @@
 {
   "clip": "clip_24",
   "class": "not_drowning",
-  "source_path": "c:\\Users\\MEHL MISTULA SKIBIDI\\Documents\\GitHub\\deep-watch\\dataset\\not_drowning\\clip_24",
+  "source_path": "c:\\Users\\mikha\\Desktop\\Mik\\deep-watch\\dataset\\not_drowning\\clip_24",
   "mode": "frames",
   "fps": 30.0,
-  "num_frames": 174,
+  "num_frames": 214,
   "keypoints": [
     "nose",
     "left_eye",
